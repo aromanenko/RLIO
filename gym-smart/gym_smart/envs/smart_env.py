@@ -2,6 +2,7 @@ import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
 
+import numpy as np
 import pandas as pd
 
 class SmartEnv(gym.Env):
@@ -16,7 +17,7 @@ class SmartEnv(gym.Env):
     # demand_data - pandas.DataFrame with information on demand of columns
     #   [shop_id, product_id, lambda, demand]
     demand_data = None
-    # pairs_data - pandas.DataFrame withlocation-sku pairs for SMART-algorithm to work with of columns
+    # pairs_data - pandas.DataFrame with location-sku pairs for SMART-algorithm to work with of columns
     #   [shop_id, product_id]
     pairs_data = None
 
@@ -44,7 +45,7 @@ class SmartEnv(gym.Env):
         state = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order'])
         # A local copy of a part of ss_data satisfying conditions
         store_sales_t = (
-            self.ss_data[(self.ss_data['store_id'] == shop_id) & (store_sales_t['product_id'] == product_id)]
+            self.ss_data[(self.ss_data['store_id'] == shop_id) & (self.ss_data['product_id'] == product_id)]
             .fillna(0)
             .drop(columns=['curr_date', 'flg_spromo'])
         )
