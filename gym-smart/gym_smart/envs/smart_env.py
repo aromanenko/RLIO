@@ -16,7 +16,7 @@ class SmartEnv(gym.Env):
     # demand_data - pandas.DataFrame with information on demand of columns
     #   [shop_id, product_id, lambda, demand]
     demand_data = None
-    # pairs_data - pandas.DataFrame withlocation-sku pairs for SMART-algorithm to work with of columns
+    # pairs_data - pandas.DataFrame with location-sku pairs for SMART-algorithm to work with of columns
     #   [shop_id, product_id]
     pairs_data = None
 
