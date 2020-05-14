@@ -53,7 +53,7 @@ class SmartEnv(gym.Env):
         sl_data_t = sl_data_t[(sl_data_t['location_ids'] == shop_id) & (sl_data_t['product_ids'] == product_id)]
 
         if not sl_data_t.empty:
-            # Added skipped days
+            # Adding skipped days
             all_days = pd.date_range(start=sl_data_t.index.min(), end=sl_data_t['date_to'].max())
             sl_data_t.index = pd.DatetimeIndex(sl_data_t.index)
             sl_data_t = sl_data_t.reindex(all_days, method='ffill')
