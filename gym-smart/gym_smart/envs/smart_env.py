@@ -48,7 +48,7 @@ class SmartEnv(gym.Env):
             .fillna(0)
             .drop(columns=['curr_date', 'flg_spromo'])
         )
-        # A local copy of a part of ss_data satisfying conditions
+        # A local copy of a part of sl_data satisfying conditions
         sl_data_t = self.sl_data.set_index(['date_from'], drop=True)
         sl_data_t = sl_data_t[(sl_data_t['location_ids'] == shop_id) & (sl_data_t['product_ids'] == product_id)]
 
