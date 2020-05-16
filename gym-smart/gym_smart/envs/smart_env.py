@@ -4,6 +4,7 @@ from gym.utils import seeding
 
 import numpy as np
 import pandas as pd
+import scipy.stats as stats
 
 class SmartEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -109,7 +110,7 @@ class SmartEnv(gym.Env):
 
         for shop_id in [shop for shop in shops_ss if shop in shops_sl]:
             for product_id in [prod for prod in products_ss if prod in products_sl]:
-                state = self.initial_state(product_id, shop_id)
+                state = self.initial_state(shop_id, product_id)
                 if state.empty:
                     empty_states = empty_states.append(
                         {'shop_id': shop_id, 'product_id': product_id},
@@ -159,10 +160,106 @@ class SmartEnv(gym.Env):
         # Load demand
         df_demand = pd.read_csv(demand_filepath, index_col=0)
         self.demand_data = df_demand
-        # Calculate location-sku pairs for SMART-algorithm to work with
-        self.pairs_data, _ = self.calculate_states()
 
         return self
+
+    def load_pairs(self, pairs_filepath):
+        """
+        Loads data into enviroment, forming a Pandas DataFrame of location-sku
+        pairs for SMART-algorithm to work with
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        pairs_filepath : string
+            A filepath (relative or absolute) to a CSV-file with information on
+            location-sku pairs [not_empty_states.csv in example]
+
+        Returns
+        -------
+        self
+        """
+        # Load pairs data
+        self.pairs_data = pd.read_csv(pairs_filepath, index_col=0)
+
+        return self
+
+    def initial_demand(self, shop_id, product_id):
+        """
+        Computes lambda and demand for given shop_id and product_id.
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        shop_id : int
+
+        product_id : int
+
+        Returns
+        -------
+        demand_data : {array-like, sparse matrix} of shape (1, n_features)
+            Returns the dataframe row with lambda and demand information,
+            where n_features is the number of features
+            {shop_id, product_id, lambda, demand}.
+        """
+        iv_ts = self.ss_data.reset_index().groupby('Timestamp').agg({'stock':np.max})
+        iv_ts = iv_ts.reindex(pd.date_range(np.min(iv_ts.index), np.max(iv_ts.index))).fillna(method='ffill')
+
+        sales_ts = self.ss_data[(self.ss_data['product_id'] == product_id) & (self.ss_data['store_id'] == shop_id)]
+        iv_sales = sales_ts[['s_qty']].merge(iv_ts, how='right', left_index=True, right_index=True)
+
+        positive_iv_sales = iv_sales[iv_sales.max(axis=1) > 0]
+        life_start_date = positive_iv_sales.index[0]
+        life_end_date = positive_iv_sales.index[-1]
+        iv_sales = iv_sales[(iv_sales.index >= life_start_date) & (iv_sales.index <= life_end_date)]
+
+        zero_idx = (iv_sales['stock'] == 0) & (iv_sales['s_qty'] == 0)
+        sales_equal_inv_idx = (iv_sales['stock'] == iv_sales['s_qty'])
+        sales_greater_i_idx = (iv_sales['stock'] <= iv_sales['s_qty'])
+
+        demand_data = pd.DataFrame(columns=['shop_id', 'product_id', 'lambda', 'demand'])
+
+        iv_sales['weights'] = [1 for x in iv_sales.index]
+        iv_sales['scalar'] = iv_sales['s_qty'][(~zero_idx)] * iv_sales['weights'][(~zero_idx)]
+        sum_k = iv_sales['scalar'].sum()
+        n_k_less_m = iv_sales['weights'][(~zero_idx) & (~sales_greater_i_idx)].sum()
+        n_k_equal_m = iv_sales['weights'][(~zero_idx) & sales_greater_i_idx].sum()
+
+        alpha = 1
+        LAMBDA = sum_k / (n_k_less_m + alpha * n_k_equal_m)
+
+        max_sales = self.ss_data[(self.ss_data['store_id']==shop_id) &
+                                 (self.ss_data['product_id']==product_id)]['s_qty'].max()
+        demand = max(stats.poisson.ppf(0.99, LAMBDA), max_sales, 1)
+        demand_data = demand_data.append({'shop_id': shop_id, 'product_id': product_id, 'lambda': LAMBDA, 'demand': demand}, ignore_index=True)
+        demand_data[['shop_id', 'product_id', 'demand']] = demand_data[['shop_id', 'product_id', 'demand']].astype('int')
+
+        return demand_data
+
+    def calculate_demand(self):
+        """
+        From self.pairs_data computes dataframe with information about
+        calculated lambda and demand for all pairs location-sku.
+
+        By: @HerrMorozovDmitry
+
+        Returns
+        -------
+        demand_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe with demand information,
+            where n_samples is the number of samples and
+            n_features is the number of features
+            {shop_id, product_id, lambda, demand}.
+        """
+        demand_data = pd.DataFrame(columns=['shop_id', 'product_id', 'lambda', 'demand'])
+        for index, row in self.pairs_data.iterrows():
+            shop_id = row['shop_id']
+            product_id = row['product_id']
+            demand_data = demand_data.append(self.initial_demand(shop_id, product_id), ignore_index=True)
+
+        return demand_data
 
     def __init__(self):
         ss_data = None
