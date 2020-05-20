@@ -185,9 +185,9 @@ class SmartEnv(gym.Env):
 
         return self
 
-    def initial_demand(self, shop_id, product_id):
+    def initial_demand(self, shop_id, product_id, alpha):
         """
-        Computes lambda and demand for given shop_id and product_id.
+        Computes demand for given shop_id and product_id.
 
         By: @HerrMorozovDmitry
 
@@ -203,6 +203,31 @@ class SmartEnv(gym.Env):
             Returns the dataframe row with lambda and demand information,
             where n_features is the number of features
             {shop_id, product_id, lambda, demand}.
+        """
+        LAMBDA = calculate_lambda(shop_id, product_id, alpha=1)
+        max_sales = self.ss_data[(self.ss_data['store_id']==shop_id) &
+                                 (self.ss_data['product_id']==product_id)]['s_qty'].max()
+        demand = max(stats.poisson.ppf(0.99, LAMBDA), max_sales, 1)
+        demand_data = demand_data.append({'shop_id': shop_id, 'product_id': product_id, 'lambda': LAMBDA, 'demand': demand}, ignore_index=True)
+        demand_data[['shop_id', 'product_id', 'demand']] = demand_data[['shop_id', 'product_id', 'demand']].astype('int')
+
+        return demand_data
+    
+    def calculate_lambda(self, shop_id, product_id, alpha):
+        """
+        Computes lambda for demand recovery
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        shop_id : int
+
+        product_id : int
+
+        Returns
+        -------
+        lambda : float param
         """
         iv_ts = self.ss_data.reset_index().groupby('Timestamp').agg({'stock':np.max})
         iv_ts = iv_ts.reindex(pd.date_range(np.min(iv_ts.index), np.max(iv_ts.index))).fillna(method='ffill')
@@ -226,17 +251,9 @@ class SmartEnv(gym.Env):
         sum_k = iv_sales['scalar'].sum()
         n_k_less_m = iv_sales['weights'][(~zero_idx) & (~sales_greater_i_idx)].sum()
         n_k_equal_m = iv_sales['weights'][(~zero_idx) & sales_greater_i_idx].sum()
-
-        alpha = 1
+        
         LAMBDA = sum_k / (n_k_less_m + alpha * n_k_equal_m)
-
-        max_sales = self.ss_data[(self.ss_data['store_id']==shop_id) &
-                                 (self.ss_data['product_id']==product_id)]['s_qty'].max()
-        demand = max(stats.poisson.ppf(0.99, LAMBDA), max_sales, 1)
-        demand_data = demand_data.append({'shop_id': shop_id, 'product_id': product_id, 'lambda': LAMBDA, 'demand': demand}, ignore_index=True)
-        demand_data[['shop_id', 'product_id', 'demand']] = demand_data[['shop_id', 'product_id', 'demand']].astype('int')
-
-        return demand_data
+        return LAMBDA
 
     def calculate_demand(self):
         """
