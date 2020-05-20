@@ -260,6 +260,41 @@ class SmartEnv(gym.Env):
             demand_data = demand_data.append(self.initial_demand(shop_id, product_id), ignore_index=True)
 
         return demand_data
+    
+    def order_update(self, data, shop_id, product_id, OUL, ROL):
+        """
+        Computes order using information from environment data and self.demand_data.
+
+        By: @sofloud
+
+        Parameters
+        ----------
+        data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock}.
+        
+        shop_id : int
+        
+        product_id : int
+
+        OUL : int
+            Order Upto Level value.
+        
+        ROL : int
+            Re-Order Level values
+
+        Returns
+        -------
+        order : int
+            Returns the value of order.
+        """
+        
+        if data.iloc[-1].stock <= ROL: rec_order = max(OUL - data.iloc[-1].stock - data.iloc[-1].order, 0)
+        else: rec_order = 0
+        order = np.random.binomial(n=rec_order, p=self.alpha_order)
+        
+        return order
 
     def __init__(self):
         ss_data = None
