@@ -9,24 +9,23 @@ import scipy.stats as stats
 class SmartEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, ss_data=None, sl_data=None, demand_data=None, pairs_data=None, max_steps=10, lt=1, alpha_order=0.3, alpha=0.01, probability=0.1):
-        # ss_data - pandas.DataFrame with information on sales and stocks of columns
-        #   [product_id, store_id, curr_date, s_qty, flg_spromo, stock, Timestamp]
-        self.ss_data = ss_data
-        # sl_data - pandas.DataFrame with information on service level of columns
-        #   [date_from, date_to, product_ids, location_ids, value]
-        self.sl_data = sl_data
-        # demand_data - pandas.DataFrame with information on demand of columns
-        #   [shop_id, product_id, lambda, demand]
-        self.demand_data = demand_data
-        # pairs_data - pandas.DataFrame with location-sku pairs for SMART-algorithm to work with of columns
-        #   [shop_id, product_id]
-        self.pairs_data = pairs_data
-        self.max_steps = max_steps
-        self.lt = lt
-        self.alpha_order = alpha_order
-        self.alpha = alpha
-        self.probability = probability
+    # ss_data - pandas.DataFrame with information on sales and stocks of columns
+    #   [product_id, store_id, curr_date, s_qty, flg_spromo, stock, Timestamp]
+    ss_data = None
+    # sl_data - pandas.DataFrame with information on service level of columns
+    #   [date_from, date_to, product_ids, location_ids, value]
+    sl_data = None
+    # demand_data - pandas.DataFrame with information on demand of columns
+    #   [shop_id, product_id, lambda, demand]
+    demand_data = None
+    # pairs_data - pandas.DataFrame with location-sku pairs for SMART-algorithm to work with of columns
+    #   [shop_id, product_id]
+    pairs_data = None
+
+    # self.max_steps = max_steps
+    # self.lt = lt
+    # self.alpha = alpha
+    # self.probability = probability
 
     def initial_state(self, shop_id, product_id):
         """
@@ -191,7 +190,7 @@ class SmartEnv(gym.Env):
 
         return self
 
-    def calculate_lambda(self, shop_id, product_id, alpha):
+    def calculate_lambda(self, shop_id, product_id, alpha_lambda):
         """
         Computes lambda for demand recovery
 
@@ -202,6 +201,8 @@ class SmartEnv(gym.Env):
         shop_id : int
 
         product_id : int
+
+        alpha_lambda
 
         Returns
         -------
@@ -230,10 +231,10 @@ class SmartEnv(gym.Env):
         n_k_less_m = iv_sales['weights'][(~zero_idx) & (~sales_greater_i_idx)].sum()
         n_k_equal_m = iv_sales['weights'][(~zero_idx) & sales_greater_i_idx].sum()
 
-        LAMBDA = sum_k / (n_k_less_m + alpha * n_k_equal_m)
+        LAMBDA = sum_k / (n_k_less_m + alpha_lambda * n_k_equal_m)
         return LAMBDA
 
-    def initial_demand(self, shop_id, product_id, alpha):
+    def initial_demand(self, shop_id, product_id, alpha_lambda):
         """
         Computes demand for given shop_id and product_id.
 
@@ -245,6 +246,8 @@ class SmartEnv(gym.Env):
 
         product_id : int
 
+        alpha_lambda
+
         Returns
         -------
         demand_data : {array-like, sparse matrix} of shape (1, n_features)
@@ -252,17 +255,17 @@ class SmartEnv(gym.Env):
             where n_features is the number of features
             {shop_id, product_id, lambda, demand}.
         """
-        LAMBDA = self.calculate_lambda(shop_id, product_id, alpha=1)
+        LAMBDA = self.calculate_lambda(shop_id, product_id, alpha_lambda)
         max_sales = self.ss_data[(self.ss_data['store_id']==shop_id) &
                                  (self.ss_data['product_id']==product_id)]['s_qty'].max()
         demand_data = pd.DataFrame(columns=['shop_id', 'product_id', 'lambda', 'demand'])
-        demand = max(stats.poisson.ppf(0.99, LAMBDA), max_sales, 1)
+        demand = min(stats.poisson.ppf(0.99, LAMBDA), max_sales)
         demand_data = demand_data.append({'shop_id': shop_id, 'product_id': product_id, 'lambda': LAMBDA, 'demand': demand}, ignore_index=True)
         demand_data[['shop_id', 'product_id', 'demand']] = demand_data[['shop_id', 'product_id', 'demand']].astype('int')
 
         return demand_data
 
-    def calculate_demand(self, alpha):
+    def calculate_demand(self, alpha_lambda):
         """
         From self.pairs_data computes dataframe with information about
         calculated lambda and demand for all pairs location-sku.
@@ -281,11 +284,11 @@ class SmartEnv(gym.Env):
         for index, row in self.pairs_data.iterrows():
             shop_id = row['shop_id']
             product_id = row['product_id']
-            demand_data = demand_data.append(self.initial_demand(shop_id, product_id, alpha), ignore_index=True)
+            demand_data = demand_data.append(self.initial_demand(shop_id, product_id, alpha_lambda), ignore_index=True)
 
         return demand_data
 
-    def order_update(stock_data, shop_id, product_id, OUL, ROL, alpha_order=0.3):
+    def order_update(stock_data, shop_id, product_id, OUL, ROL, alpha_order):
         """
         Computes order using information from environment data (with binomial distribution with alpha_order param)
 
@@ -298,6 +301,10 @@ class SmartEnv(gym.Env):
         shop_id : int
 
         product_id : int
+
+        OUL
+
+        ROL
 
         alpha_order
 
@@ -557,7 +564,6 @@ class SmartEnv(gym.Env):
         sl_data = None
         pairs_data = None
         demand_data = None
-
         print('Environment initialized!')
         pass
 
