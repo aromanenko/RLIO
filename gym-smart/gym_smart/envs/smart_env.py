@@ -9,18 +9,24 @@ import scipy.stats as stats
 class SmartEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    # ss_data - pandas.DataFrame with information on sales and stocks of columns
-    #   [product_id, store_id, curr_date, s_qty, flg_spromo, stock, Timestamp]
-    ss_data = None
-    # sl_data - pandas.DataFrame with information on service level of columns
-    #   [date_from, date_to, product_ids, location_ids, value]
-    sl_data = None
-    # demand_data - pandas.DataFrame with information on demand of columns
-    #   [shop_id, product_id, lambda, demand]
-    demand_data = None
-    # pairs_data - pandas.DataFrame with location-sku pairs for SMART-algorithm to work with of columns
-    #   [shop_id, product_id]
-    pairs_data = None
+    def __init__(self, ss_data=None, sl_data=None, demand_data=None, pairs_data=None, max_steps=10, lt=1, alpha_order=0.3, alpha=0.01, probability=0.1):
+        # ss_data - pandas.DataFrame with information on sales and stocks of columns
+        #   [product_id, store_id, curr_date, s_qty, flg_spromo, stock, Timestamp]
+        self.ss_data = ss_data
+        # sl_data - pandas.DataFrame with information on service level of columns
+        #   [date_from, date_to, product_ids, location_ids, value]
+        self.sl_data = sl_data
+        # demand_data - pandas.DataFrame with information on demand of columns
+        #   [shop_id, product_id, lambda, demand]
+        self.demand_data = demand_data
+        # pairs_data - pandas.DataFrame with location-sku pairs for SMART-algorithm to work with of columns
+        #   [shop_id, product_id]
+        self.pairs_data = pairs_data
+        self.max_steps = max_steps
+        self.lt = lt
+        self.alpha_order = alpha_order
+        self.alpha = alpha
+        self.probability = probability
 
     def initial_state(self, shop_id, product_id):
         """
@@ -185,34 +191,6 @@ class SmartEnv(gym.Env):
 
         return self
 
-    def initial_demand(self, shop_id, product_id, alpha):
-        """
-        Computes demand for given shop_id and product_id.
-
-        By: @HerrMorozovDmitry
-
-        Parameters
-        ----------
-        shop_id : int
-
-        product_id : int
-
-        Returns
-        -------
-        demand_data : {array-like, sparse matrix} of shape (1, n_features)
-            Returns the dataframe row with lambda and demand information,
-            where n_features is the number of features
-            {shop_id, product_id, lambda, demand}.
-        """
-        LAMBDA = calculate_lambda(shop_id, product_id, alpha=1)
-        max_sales = self.ss_data[(self.ss_data['store_id']==shop_id) &
-                                 (self.ss_data['product_id']==product_id)]['s_qty'].max()
-        demand = max(stats.poisson.ppf(0.99, LAMBDA), max_sales, 1)
-        demand_data = demand_data.append({'shop_id': shop_id, 'product_id': product_id, 'lambda': LAMBDA, 'demand': demand}, ignore_index=True)
-        demand_data[['shop_id', 'product_id', 'demand']] = demand_data[['shop_id', 'product_id', 'demand']].astype('int')
-
-        return demand_data
-    
     def calculate_lambda(self, shop_id, product_id, alpha):
         """
         Computes lambda for demand recovery
@@ -251,11 +229,40 @@ class SmartEnv(gym.Env):
         sum_k = iv_sales['scalar'].sum()
         n_k_less_m = iv_sales['weights'][(~zero_idx) & (~sales_greater_i_idx)].sum()
         n_k_equal_m = iv_sales['weights'][(~zero_idx) & sales_greater_i_idx].sum()
-        
+
         LAMBDA = sum_k / (n_k_less_m + alpha * n_k_equal_m)
         return LAMBDA
 
-    def calculate_demand(self):
+    def initial_demand(self, shop_id, product_id, alpha):
+        """
+        Computes demand for given shop_id and product_id.
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        shop_id : int
+
+        product_id : int
+
+        Returns
+        -------
+        demand_data : {array-like, sparse matrix} of shape (1, n_features)
+            Returns the dataframe row with lambda and demand information,
+            where n_features is the number of features
+            {shop_id, product_id, lambda, demand}.
+        """
+        LAMBDA = self.calculate_lambda(shop_id, product_id, alpha=1)
+        max_sales = self.ss_data[(self.ss_data['store_id']==shop_id) &
+                                 (self.ss_data['product_id']==product_id)]['s_qty'].max()
+        demand_data = pd.DataFrame(columns=['shop_id', 'product_id', 'lambda', 'demand'])
+        demand = max(stats.poisson.ppf(0.99, LAMBDA), max_sales, 1)
+        demand_data = demand_data.append({'shop_id': shop_id, 'product_id': product_id, 'lambda': LAMBDA, 'demand': demand}, ignore_index=True)
+        demand_data[['shop_id', 'product_id', 'demand']] = demand_data[['shop_id', 'product_id', 'demand']].astype('int')
+
+        return demand_data
+
+    def calculate_demand(self, alpha):
         """
         From self.pairs_data computes dataframe with information about
         calculated lambda and demand for all pairs location-sku.
@@ -274,24 +281,24 @@ class SmartEnv(gym.Env):
         for index, row in self.pairs_data.iterrows():
             shop_id = row['shop_id']
             product_id = row['product_id']
-            demand_data = demand_data.append(self.initial_demand(shop_id, product_id), ignore_index=True)
+            demand_data = demand_data.append(self.initial_demand(shop_id, product_id, alpha), ignore_index=True)
 
         return demand_data
-    
+
     def order_update(stock_data, shop_id, product_id, OUL, ROL, alpha_order=0.3):
         """
-        Computes order using information from environment data (with binomial distribution with alpha_order param) 
-        
+        Computes order using information from environment data (with binomial distribution with alpha_order param)
+
         By: @Kirili4ik
-        
+
         Parameters
         ----------
         stock_data : pd.DataFrame with 'shop_id', 'product_id', 'stock' and 'value' columns
-        
+
         shop_id : int
-        
+
         product_id : int
-        
+
         alpha_order
 
         Returns
@@ -311,8 +318,240 @@ class SmartEnv(gym.Env):
         ord_value = np.random.binomial(n=rec_ord_value, p=alpha_order)
 
         return ord_value
-    
-    
+
+    def fit_single(self, shop_id, product_id):
+        """
+        Running the SMART algorithm for one location-sku pair and obtaining summary
+        information about all used states, actions with rewards and environment data.
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        shop_id : int
+
+        product_id : int
+
+        Returns
+        -------
+        state_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the states,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order}.
+
+        action_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the actions,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, state, OUL, ROL, R}.
+
+        env_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock}.
+        """
+        state_data = self.initial_state(shop_id, product_id)
+        action_data = self.initial_action(shop_id, product_id, np.arange(len(state_data)))
+        env_data = pd.DataFrame(columns=['location', 'sku', 'order', 'sales', 'stock'])
+
+        for starting_state in range(len(state_data)):
+            m = 0 # time step
+            T = 0 # total time
+            C = 0 # cumulative reward / total reward
+            p = 0 # reward rate / average reward
+
+            while m < self.max_steps:
+                if m == 0:
+                    i = starting_state
+                    alpha = self.alpha
+                    probability = 1
+
+                    env_data = env_data.append({'location': shop_id,
+                                                'sku': product_id,
+                                                'order': state_data.at[i, 'order'],
+                                                'sales': state_data.at[i, 'sales'],
+                                                'stock': state_data.at[i, 'stock']},
+                                               ignore_index=True)
+                else:
+                    alpha = self.alpha / m
+                    probability = self.probability / m
+
+                non_exploratory = np.random.binomial(n=1, p=1-probability)
+                if non_exploratory:
+                    action_index = action_data[action_data['state']==i].R.idxmax()
+                else:
+                    action_index = action_data[action_data['state']==i].R.idxmax()
+                    if len(action_data[action_data['state']==i]) > 1:
+                        action_index = np.random.choice(action_data[(action_data['state']==i) &
+                                                                    (action_data.index != action_index)].index, 1)[0]
+
+                env_data = env_data.append({'location': shop_id,
+                                            'sku': product_id,
+                                            'order': self.order_update(env_data, shop_id, product_id, action_data.loc[action_index].OUL, action_data.loc[action_index].ROL),
+                                            'sales': self.sales_update(env_data, shop_id, product_id),
+                                            'stock': self.stock_update(env_data, shop_id, product_id)},
+                                           ignore_index=True)
+
+                new_state = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order'])
+                new_state = new_state.append({'location': shop_id,
+                                              'sku': product_id,
+                                              'sales': env_data.iloc[-1].sales,
+                                              'stock': env_data.iloc[-1].stock,
+                                              'sl': state_data.at[i, 'sl'],
+                                              'order': env_data.iloc[-1].order
+                                              }, ignore_index=True)
+
+                if state_data[(state_data.sales==new_state.sales[0]) &
+                              (state_data.stock==new_state.stock[0]) &
+                              (state_data.sl==new_state.sl[0]) &
+                              (state_data.order==new_state.order[0])].empty:
+                    state_data = state_data.append(new_state, ignore_index=True)
+                    j = state_data.index.max()
+                    action_data = action_data.append(self.initial_action(shop_id, product_id, [j]), ignore_index=True)
+                else:
+                    j = state_data[(state_data.sales==new_state.sales[0]) &
+                                   (state_data.stock==new_state.stock[0]) &
+                                   (state_data.sl==new_state.sl[0]) &
+                                   (state_data.order==new_state.order[0])].index[0]
+
+                r = (new_state['sales'] - new_state['stock'] * (1 - new_state['sl']) / new_state['sl']).sum()
+                action_data.at[action_index, 'R'] = (1 - alpha) * action_data.at[action_index, 'R'] + alpha * (r - p * self.lt + action_data[action_data['state']==j].R.max())
+
+                if non_exploratory:
+                    C = C + r
+                    T += self.lt
+                    p = C / T
+                i = j
+                m += 1
+
+        state_data[['sales', 'stock']] = state_data[['sales', 'stock']].astype('int')
+        env_data = env_data.astype('int')
+        return state_data, action_data, env_data
+
+    def fit_multiple(self, quantity='All'):
+        """
+        Running the SMART algorithm for some location-sku pairs and obtaining summary
+        information about all used states, actions with rewards and environment data.
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        quantity : {int, 'All'}
+            Sets the number of location-sku pairs starting from the zero position
+            in the self.pairs_data for which you want to run the SMART algorithm.
+            If 'All', then use all pairs.
+
+        Returns
+        -------
+        state_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the states,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order}.
+
+        action_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the actions,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, state, OUL, ROL, R}.
+
+        env_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock}.
+        """
+        state_data = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order'])
+        action_data = pd.DataFrame(columns=['location', 'sku', 'state', 'OUL', 'ROL', 'R'])
+        env_data = pd.DataFrame(columns=['location', 'sku', 'order', 'sales', 'stock'])
+
+        if quantity == 'All':
+            quantity = len(self.pairs_data)
+
+        for index, row in self.pairs_data.iloc[:quantity].iterrows():
+            shop_id = row['shop_id']
+            product_id = row['product_id']
+
+            state = self.initial_state(shop_id, product_id)
+            action = self.initial_action(shop_id, product_id, np.arange(len(state)))
+            env = pd.DataFrame(columns=['location', 'sku', 'order', 'sales', 'stock'])
+
+            for starting_state in range(len(state)):
+                m = 0 # time step
+                T = 0 # total time
+                C = 0 # cumulative reward / total reward
+                p = 0 # reward rate / average reward
+
+                while m < self.max_steps:
+                    if m == 0:
+                        i = starting_state
+                        alpha = self.alpha
+                        probability = 1
+
+                        env = env.append({'location': shop_id,
+                                          'sku': product_id,
+                                          'order': state.at[i, 'order'],
+                                          'sales': state.at[i, 'sales'],
+                                          'stock': state.at[i, 'stock']},
+                                         ignore_index=True)
+                    else:
+                        alpha = self.alpha / m
+                        probability = self.probability / m
+
+                    non_exploratory = np.random.binomial(n=1, p=1-probability)
+                    if non_exploratory:
+                        action_index = action[action['state']==i].R.idxmax()
+                    else:
+                        action_index = action[action['state']==i].R.idxmax()
+                        if len(action[action['state']==i]) > 1:
+                            action_index = np.random.choice(action[(action['state']==i) &
+                                                                   (action.index != action_index)].index, 1)[0]
+
+                    env = env.append({'location': shop_id,
+                                      'sku': product_id,
+                                      'order': self.order_update(env, shop_id, product_id, action.loc[action_index].OUL, action.loc[action_index].ROL),
+                                      'sales': self.sales_update(env, shop_id, product_id),
+                                      'stock': self.stock_update(env, shop_id, product_id)},
+                                     ignore_index=True)
+
+                    new_state = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order'])
+                    new_state = new_state.append({'location': shop_id,
+                                                  'sku': product_id,
+                                                  'sales': env.iloc[-1].sales,
+                                                  'stock': env.iloc[-1].stock,
+                                                  'sl': state.at[i, 'sl'],
+                                                  'order': env.iloc[-1].order
+                                                  }, ignore_index=True)
+
+                    if state[(state.sales==new_state.sales[0]) &
+                             (state.stock==new_state.stock[0]) &
+                             (state.sl==new_state.sl[0]) &
+                             (state.order==new_state.order[0])].empty:
+                        state = state.append(new_state, ignore_index=True)
+                        j = state.index.max()
+                        action = action.append(self.initial_action(shop_id, product_id, [j]), ignore_index=True)
+                    else:
+                        j = state[(state.sales==new_state.sales[0]) &
+                                  (state.stock==new_state.stock[0]) &
+                                  (state.sl==new_state.sl[0]) &
+                                  (state.order==new_state.order[0])].index[0]
+
+                    r = (new_state['sales'] - new_state['stock'] * (1 - new_state['sl']) / new_state['sl']).sum()
+                    action.at[action_index, 'R'] = (1 - alpha) * action.at[action_index, 'R'] + alpha * max(r - p * self.lt + action[action['state']==j].R.max(), 0)
+
+                    if non_exploratory:
+                        C = C + r
+                        T += self.lt
+                        p = C / T
+                    i = j
+                    m += 1
+
+            state_data = state_data.append(state)
+            action_data = action_data.append(action)
+            env_data = env_data.append(env)
+
+        state_data[['sales', 'stock']] = state_data[['sales', 'stock']].astype('int')
+        env_data = env_data.astype('int')
+        return state_data, action_data, env_data
+
+
     def __init__(self):
         ss_data = None
         sl_data = None
