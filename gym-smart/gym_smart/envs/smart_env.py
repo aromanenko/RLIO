@@ -277,7 +277,42 @@ class SmartEnv(gym.Env):
             demand_data = demand_data.append(self.initial_demand(shop_id, product_id), ignore_index=True)
 
         return demand_data
+    
+    def order_update(stock_data, shop_id, product_id, OUL, ROL, alpha_order=0.3):
+        """
+        Computes order using information from environment data (with binomial distribution with alpha_order param) 
+        
+        By: @Kirili4ik
+        
+        Parameters
+        ----------
+        stock_data : pd.DataFrame with 'shop_id', 'product_id', 'stock' and 'value' columns
+        
+        shop_id : int
+        
+        product_id : int
+        
+        alpha_order
 
+        Returns
+        -------
+        order : int
+            Returns the value of order for given shop and product ids.
+        """
+        curr_shop_prod = stock_data[(stock_data['shop_id'] == shop_id)
+                                    & (stock_data['product_id'] == product_id)].iloc[-1]
+
+        if curr_shop_prod['stock'] <= ROL:
+            rec_ord_value = OUL - curr_shop_prod['stock'] - curr_shop_prod['value']
+            rec_ord_value = max(rec_ord_value, 0)
+        else:
+            rec_ord_value = 0
+
+        ord_value = np.random.binomial(n=rec_ord_value, p=alpha_order)
+
+        return ord_value
+    
+    
     def __init__(self):
         ss_data = None
         sl_data = None
