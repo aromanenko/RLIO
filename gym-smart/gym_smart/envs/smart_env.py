@@ -552,6 +552,191 @@ class SmartEnv(gym.Env):
         state_data[['sales', 'stock']] = state_data[['sales', 'stock']].astype('int')
         env_data = env_data.astype('int')
         return state_data, action_data, env_data
+    
+    def simulation(self, state_data, action_data, env_data, quantity, date_start, date_end):
+        """
+        Simulates the operation of the algorithm and returns summary
+        information about itand the operation of the original system.
+        
+        By: @sofloud
+
+        Parameters
+        ----------
+        state_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the states,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order}.
+
+        action_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the actions,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, state, OUL, ROL, R}.
+
+        env_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock}.
+
+        quantity : {int}
+            Sets the number of location-sku pairs starting from the zero position in the
+            self.pairs_data for which you want to simulate the SMART algorithm operation.
+
+        date_start : {Timestamp}
+            Initial date of the environment simulation.
+
+        date_end : {Timestamp}
+            Final date of the environment simulation.
+
+        Returns
+        -------
+        starting_state : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the initial states,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order, curr_date}.
+
+        old_states : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the original states,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order, curr_date}.
+
+        new_states : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the states obtained
+            during the application of the SMART algorithm,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order, curr_date}.
+
+        """
+        old_states = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order', 'curr_date'])
+        new_states = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order', 'curr_date'])
+        starting_state = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order', 'curr_date'])
+
+        for index, row in model.pairs_data.iloc[:quantity].iterrows():
+            shop_id = row['shop_id']
+            product_id = row['product_id']
+
+            state = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order'])
+
+            store_sales_t = model.ss_data[model.ss_data['store_id']==shop_id]
+            store_sales_t = store_sales_t[store_sales_t['product_id']==product_id].fillna(0)
+            store_sales_t = store_sales_t.drop(columns=['flg_spromo'])
+
+            sl_data_t = model.sl_data.set_index(['date_from'], drop=True)
+            sl_data_t = sl_data_t[sl_data_t['location_ids']==shop_id]
+            sl_data_t = sl_data_t[sl_data_t['product_ids']==product_id]
+
+            all_days = pd.date_range(start=sl_data_t.index.min(), end=sl_data_t['date_to'].max())
+            sl_data_t.index = pd.DatetimeIndex(sl_data_t.index)
+            sl_data_t = sl_data_t.reindex(all_days, method='ffill')
+            sl_data_t = sl_data_t.drop(columns=['date_to'])
+
+            state_t = pd.merge(store_sales_t, sl_data_t['value'], how='right', left_on=store_sales_t.index, right_on=sl_data_t.index)
+            state_t = state_t.rename(columns={'store_id': 'location', 'product_id': 'sku', 's_qty': 'sales', 'value': 'sl'})
+            state_t = state_t.drop(columns=['key_0'])
+            state_t = state_t.drop_duplicates()
+            state_t = state_t.dropna()
+            state_t['order'] = 0
+            state = state.append(state_t, ignore_index=True)
+
+            for date in pd.date_range(start=date_start, end=date_end):
+                old_states = old_states.append(state[state['curr_date']==date], ignore_index=True)
+
+            starting_state = starting_state.append(state[state['curr_date']==pd.to_datetime(date_start - timedelta(days=1))], ignore_index=True)
+
+            new_states_t = state[state['curr_date']==pd.to_datetime(date_start - timedelta(days=1))]
+
+            for date in pd.date_range(start=date_start, end=date_end):
+                if not new_states_t.empty:
+                    sales = new_states_t.iloc[-1].sales
+                    stock = new_states_t.iloc[-1].stock
+                    order = new_states_t.iloc[-1].order
+                    sl = new_states_t.iloc[-1].sl 
+
+                    if not state_data[(state_data['location']==shop_id) & (state_data['sku']==product_id) &
+                                      (state_data['sales']==sales) & (state_data['stock']==stock) &
+                                      (state_data['sl']==sl) & (state_data['order']==order)].empty:
+
+                        state_index = state_data[(state_data['location']==shop_id) & (state_data['sku']==product_id) &
+                                                 (state_data['sales']==sales) & (state_data['stock']==stock) &
+                                                 (state_data['sl']==sl) & (state_data['order']==order)].index[0]
+
+                        action_index = action_data[(action_data['location']==shop_id) &
+                                                   (action_data['sku']==product_id) &
+                                                   (action_data['state']==state_index)].R.idxmax()
+
+                        OUL = action_data[(action_data['location']==shop_id) &
+                                          (action_data['sku']==product_id)].loc[action_index].OUL
+                        ROL = action_data[(action_data['location']==shop_id) &
+                                          (action_data['sku']==product_id)].loc[action_index].ROL
+
+                        new_states_t = new_states_t.append({'location': shop_id,
+                                                            'sku': product_id,
+                                                            'sales': model.sales_update(new_states_t, shop_id, product_id),
+                                                            'stock': model.stock_update(new_states_t, shop_id, product_id),
+                                                            'sl': sl,
+                                                            'order': model.order_update(new_states_t, shop_id, product_id, OUL, ROL),
+                                                            'curr_date': date
+                                                            }, ignore_index=True)
+                    else:
+                        new_states_t = new_states_t.append({'location': shop_id,
+                                                            'sku': product_id,
+                                                            'sales': 0,
+                                                            'stock': 0,
+                                                            'sl': 0,
+                                                            'order': 0,
+                                                            'curr_date': date
+                                                            }, ignore_index=True)
+                else:
+                    new_states_t = new_states_t.append({'location': shop_id,
+                                                        'sku': product_id,
+                                                        'sales': 0,
+                                                        'stock': 0,
+                                                        'sl': 0,
+                                                        'order': 0,
+                                                        'curr_date': date
+                                                        }, ignore_index=True)
+
+            new_states = new_states.append(new_states_t.iloc[1:], ignore_index=True)
+
+        starting_state[['location', 'sku', 'sales', 'stock']] = starting_state[['location', 'sku', 'sales', 'stock']].astype('int')
+        old_states[['location', 'sku', 'sales', 'stock']] = old_states[['location', 'sku', 'sales', 'stock']].astype('int')
+        new_states[['location', 'sku', 'sales', 'stock']] = new_states[['location', 'sku', 'sales', 'stock']].astype('int')
+
+        
+        return starting_state, old_states, new_states      
+
+    def reward(self, old_states, new_states):
+        """
+        Computes and returns reward using information from the original and new states.
+        
+        By: @sofloud
+
+        Parameters
+        ----------
+        old_states : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the original states,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order, curr_date}.
+        
+        new_states : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the states obtained
+            during the application of the SMART algorithm,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order, curr_date}.
+
+
+        Returns
+        -------
+        old_reward : {float}
+            Returns the total reward of original system.
+
+        new_reward : {float}
+            Returns the total reward of the states obtained
+            during the application of the SMART algorithm.
+            
+        """
+        old_reward = (old_states['sales'] - old_states['stock'] * (1 - old_states['sl']) / old_states['sl']).sum()
+        new_reward = (new_states['sales'] - new_states['stock'] * (1 - new_states['sl']) / new_states['sl']).sum()
+        return old_reward, new_reward
 
 
     def __init__(self):
