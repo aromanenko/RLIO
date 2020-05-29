@@ -22,11 +22,6 @@ class SmartEnv(gym.Env):
     #   [shop_id, product_id]
     pairs_data = None
 
-    # self.max_steps = max_steps
-    # self.lt = lt
-    # self.alpha = alpha
-    # self.probability = probability
-
     def initial_state(self, shop_id, product_id):
         """
         Initializes a dataframe of initial states for a given location-sku pair.
@@ -326,7 +321,7 @@ class SmartEnv(gym.Env):
 
         return ord_value
 
-    def fit_single(self, shop_id, product_id):
+    def learn_single(self, shop_id, product_idm, max_steps, alpha, probability):
         """
         Running the SMART algorithm for one location-sku pair and obtaining summary
         information about all used states, actions with rewards and environment data.
@@ -366,11 +361,11 @@ class SmartEnv(gym.Env):
             C = 0 # cumulative reward / total reward
             p = 0 # reward rate / average reward
 
-            while m < self.max_steps:
+            while m < max_steps:
                 if m == 0:
                     i = starting_state
-                    alpha = self.alpha
-                    probability = 1
+                    alpha_m = alpha
+                    probability_m = 1
 
                     env_data = env_data.append({'location': shop_id,
                                                 'sku': product_id,
@@ -379,10 +374,10 @@ class SmartEnv(gym.Env):
                                                 'stock': state_data.at[i, 'stock']},
                                                ignore_index=True)
                 else:
-                    alpha = self.alpha / m
-                    probability = self.probability / m
+                    alpha_m = alpha / m
+                    probability_m = probability / m
 
-                non_exploratory = np.random.binomial(n=1, p=1-probability)
+                non_exploratory = np.random.binomial(n=1, p=1-probability_m)
                 if non_exploratory:
                     action_index = action_data[action_data['state']==i].R.idxmax()
                 else:
@@ -421,7 +416,7 @@ class SmartEnv(gym.Env):
                                    (state_data.order==new_state.order[0])].index[0]
 
                 r = (new_state['sales'] - new_state['stock'] * (1 - new_state['sl']) / new_state['sl']).sum()
-                action_data.at[action_index, 'R'] = (1 - alpha) * action_data.at[action_index, 'R'] + alpha * (r - p * self.lt + action_data[action_data['state']==j].R.max())
+                action_data.at[action_index, 'R'] = (1 - alpha_m) * action_data.at[action_index, 'R'] + alpha_m * (r - p * self.lt + action_data[action_data['state']==j].R.max())
 
                 if non_exploratory:
                     C = C + r
@@ -434,7 +429,7 @@ class SmartEnv(gym.Env):
         env_data = env_data.astype('int')
         return state_data, action_data, env_data
 
-    def fit_multiple(self, quantity='All'):
+    def learn(self, quantity='All', max_steps, alpha, probability):
         """
         Running the SMART algorithm for some location-sku pairs and obtaining summary
         information about all used states, actions with rewards and environment data.
@@ -489,8 +484,8 @@ class SmartEnv(gym.Env):
                 while m < self.max_steps:
                     if m == 0:
                         i = starting_state
-                        alpha = self.alpha
-                        probability = 1
+                        alpha_m = alpha
+                        probability_m = 1
 
                         env = env.append({'location': shop_id,
                                           'sku': product_id,
@@ -499,10 +494,10 @@ class SmartEnv(gym.Env):
                                           'stock': state.at[i, 'stock']},
                                          ignore_index=True)
                     else:
-                        alpha = self.alpha / m
-                        probability = self.probability / m
+                        alpha_m = alpha / m
+                        probability_m = probability / m
 
-                    non_exploratory = np.random.binomial(n=1, p=1-probability)
+                    non_exploratory = np.random.binomial(n=1, p=1-probability_m)
                     if non_exploratory:
                         action_index = action[action['state']==i].R.idxmax()
                     else:
@@ -541,7 +536,7 @@ class SmartEnv(gym.Env):
                                   (state.order==new_state.order[0])].index[0]
 
                     r = (new_state['sales'] - new_state['stock'] * (1 - new_state['sl']) / new_state['sl']).sum()
-                    action.at[action_index, 'R'] = (1 - alpha) * action.at[action_index, 'R'] + alpha * max(r - p * self.lt + action[action['state']==j].R.max(), 0)
+                    action.at[action_index, 'R'] = (1 - alpha_m) * action.at[action_index, 'R'] + alpha_m * max(r - p * self.lt + action[action['state']==j].R.max(), 0)
 
                     if non_exploratory:
                         C = C + r
