@@ -704,39 +704,25 @@ class SmartEnv(gym.Env):
         
         return starting_state, old_states, new_states      
 
-    def reward(self, old_states, new_states):
+    def reward(self, environment):
         """
-        Computes and returns reward using information from the original and new states.
+        Computes and returns reward.
         
         By: @sofloud
 
         Parameters
         ----------
-        old_states : {array-like, sparse matrix} of shape (n_samples, n_features)
-            Returns the dataframe of the original states,
-            where n_samples is the number of samples and
+        environment : {array-like, sparse matrix} of shape (n_samples, n_features)   
             n_features is the number of features {location, sku, sales, stock, sl, order, curr_date}.
-        
-        new_states : {array-like, sparse matrix} of shape (n_samples, n_features)
-            Returns the dataframe of the states obtained
-            during the application of the SMART algorithm,
-            where n_samples is the number of samples and
-            n_features is the number of features {location, sku, sales, stock, sl, order, curr_date}.
-
 
         Returns
         -------
-        old_reward : {float}
-            Returns the total reward of original system.
+        reward : {float}
+            Returns reward.
 
-        new_reward : {float}
-            Returns the total reward of the states obtained
-            during the application of the SMART algorithm.
-            
         """
-        old_reward = (old_states['sales'] - old_states['stock'] * (1 - old_states['sl']) / old_states['sl']).sum()
-        new_reward = (new_states['sales'] - new_states['stock'] * (1 - new_states['sl']) / new_states['sl']).sum()
-        return old_reward, new_reward
+        reward = (environment['sales'] - environment['stock'] * (1 - environment['sl']) / environment['sl']).sum()
+        return reward
 
 
     def __init__(self):
