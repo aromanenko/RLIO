@@ -713,7 +713,7 @@ class SmartEnv(gym.Env):
         Parameters
         ----------
         environment : {array-like, sparse matrix} of shape (n_samples, n_features)   
-            n_features is the number of features {location, sku, sales, stock, sl, order, curr_date}.
+            n_features is the number of features {'location', 'sku', 'sales', 'stock', 'sl', 'order'}.
 
         Returns
         -------
