@@ -9,7 +9,6 @@ from itertools import product
 
 class SmartEnv(gym.Env):
     metadata = {'render.modes': ['human']}
-
     # ss_data - pandas.DataFrame with information on sales and stocks of columns
     #   [product_id, store_id, curr_date, s_qty, flg_spromo, stock, Timestamp]
     ss_data = None
@@ -270,11 +269,11 @@ class SmartEnv(gym.Env):
 
         product_id : int
 
-        alpha_lambda
+        alpha_lambda : float
 
         Returns
         -------
-        lambda : float param
+        lambda : float
         """
         iv_ts = self.ss_data.reset_index().groupby('Timestamp').agg({'stock':np.max})
         iv_ts = iv_ts.reindex(pd.date_range(np.min(iv_ts.index), np.max(iv_ts.index))).fillna(method='ffill')
@@ -315,7 +314,7 @@ class SmartEnv(gym.Env):
 
         product_id : int
 
-        alpha_lambda
+        alpha_lambda : float
 
         Returns
         -------
@@ -341,6 +340,10 @@ class SmartEnv(gym.Env):
 
         By: @HerrMorozovDmitry
 
+        Parameters
+        ----------
+        alpha_lambda : float
+
         Returns
         -------
         demand_data : {array-like, sparse matrix} of shape (n_samples, n_features)
@@ -365,30 +368,37 @@ class SmartEnv(gym.Env):
 
         Parameters
         ----------
+        data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Dataframe with environment information,
+            where n_samples is the number of samples and
+            n_features is the number of features
+            {shop_id, product_id, stock, sales, order}.
+
         shop_id : int
 
         product_id : int
+
+        LT : int
+
+        deviation : float
 
         Returns
         -------
         sales : int
             Returns the value of sales.
-        """
 
+        dem : int
+            Returns the value of demand
+        """
         dem = self.demand_data[(self.demand_data['shop_id'] == shop_id) &
                                (self.demand_data['product_id'] == product_id)].iloc[0].demand
-
         if deviation != None:
             dev = int((np.random.normal(loc=deviation * dem, size=1)[0]).round())
         else:
             dev = 0
-
-
         dem += dev
-
         sales = min(dem,
                     data.iloc[-1].stock + data.iloc[-LT].order)
-
         return sales, dem
 
     def stock_update(self, data, shop_id, product_id, LT, dem):
@@ -399,38 +409,49 @@ class SmartEnv(gym.Env):
 
         Parameters
         ----------
+        data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Dataframe with environment information,
+            where n_samples is the number of samples and
+            n_features is the number of features
+            {shop_id, product_id, stock, sales, order}.
+
         shop_id : int
 
         product_id : int
+
+        LT : int
+
+        dem : int
 
         Returns
         -------
         stock : int
             Returns the value of stock.
         """
-        #stock = max(data.iloc[-1].stock + data.iloc[-LT].order - self.demand_data[(self.demand_data['shop_id']==shop_id) &(self.demand_data['product_id']==product_id)].iloc[0].demand, 0)
         stock = max(0, (data.iloc[-1].stock + data.iloc[-LT].order - dem))
         return stock
 
     def order_update(self, stock_data, shop_id, product_id, OUL, ROL, alpha_order):
         """
-        Computes order using information from environment data (with binomial distribution with alpha_order param)
+        Computes order using information from environment data
+        (with binomial distribution with alpha_order param)
 
         By: @Kirili4ik
 
         Parameters
         ----------
-        stock_data : pd.DataFrame with 'shop_id', 'product_id', 'stock' and 'value' columns
+        stock_data : pd.DataFrame with 'shop_id', 'product_id', 'stock',
+                     'sales' and 'order' columns
 
         shop_id : int
 
         product_id : int
 
-        OUL
+        OUL : int
 
-        ROL
+        ROL : int
 
-        alpha_order
+        alpha_order : float
 
         Returns
         -------
@@ -449,6 +470,29 @@ class SmartEnv(gym.Env):
 
         return ord_value
 
+    def reward(self, environment):
+        """
+        Returns reward of enviroment dataframe.
+
+        By: @sofloud
+
+        Parameters
+        ----------
+        environment : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Dataframe with environment information,
+            where n_samples is the number of samples and
+            n_features is the number of features
+            {shop_id, product_id, stock, sales, order}.
+
+        Returns
+        -------
+        rew : float
+            Reward of the system.
+        """
+        rew = (environment['sales'] - environment['stock'] * (1 - environment['sl']) / environment['sl']).sum()
+
+        return rew
+
     def learn_single(self, shop_id, product_id, max_steps, alpha, probability, LT, alpha_order):
         """
         Running the SMART algorithm for one location-sku pair and obtaining summary
@@ -462,20 +506,30 @@ class SmartEnv(gym.Env):
 
         product_id : int
 
+        max_steps : int
+
+        alpha : float
+
+        probability : float
+
+        LT : int
+
+        alpha_order : float
+
         Returns
         -------
         state_data : {array-like, sparse matrix} of shape (n_samples, n_features)
-            Returns the dataframe of the states,
+            Returns the dataframe of the states in self,
             where n_samples is the number of samples and
             n_features is the number of features {location, sku, sales, stock, sl, order}.
 
         action_data : {array-like, sparse matrix} of shape (n_samples, n_features)
-            Returns the dataframe of the actions,
+            Returns the dataframe of the actions in self,
             where n_samples is the number of samples and
             n_features is the number of features {location, sku, state, OUL, ROL, R}.
 
         env_data : {array-like, sparse matrix} of shape (n_samples, n_features)
-            Returns the dataframe of the environment,
+            Returns the dataframe of the environment in self,
             where n_samples is the number of samples and
             n_features is the number of features {location, sku, order, sales, stock}.
         """
@@ -575,20 +629,30 @@ class SmartEnv(gym.Env):
             in the self.pairs_data for which you want to run the SMART algorithm.
             If 'All', then use all pairs.
 
+        max_steps : int
+
+        alpha : float
+
+        probability : float
+
+        LT : int
+
+        alpha_order : float
+
         Returns
         -------
         state_data : {array-like, sparse matrix} of shape (n_samples, n_features)
-            Returns the dataframe of the states,
+            Returns the dataframe of the states in self,
             where n_samples is the number of samples and
             n_features is the number of features {location, sku, sales, stock, sl, order}.
 
         action_data : {array-like, sparse matrix} of shape (n_samples, n_features)
-            Returns the dataframe of the actions,
+            Returns the dataframe of the actions in self,
             where n_samples is the number of samples and
             n_features is the number of features {location, sku, state, OUL, ROL, R}.
 
         env_data : {array-like, sparse matrix} of shape (n_samples, n_features)
-            Returns the dataframe of the environment,
+            Returns the dataframe of the environment in self,
             where n_samples is the number of samples and
             n_features is the number of features {location, sku, order, sales, stock}.
         """
@@ -700,10 +764,48 @@ class SmartEnv(gym.Env):
         print('Environment initialized!')
 
     def reset(self):
+        """
+        Return summory environment information from SMART.
+
+        By: @HerrMorozovDmitry
+
+        Returns
+        -------
+        state_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the states,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, sales, stock, sl, order}.
+
+        action_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the actions,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, state, OUL, ROL, R}.
+
+        env_data : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Returns the dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock}.
+        """
         print('Environment reset!')
         return self.state_data, self.action_data, self.env_data
 
     def predict(self, obs):
+        """
+        Predict optimal action for current state.
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        obs : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock, sl}.
+
+        Returns
+        -------
+        Pair (OUL : int, ROL : int)
+        """
         shop_id = obs.iloc[-1].location
         product_id = obs.iloc[-1].sku
         sales = obs.iloc[-1].sales
@@ -734,7 +836,35 @@ class SmartEnv(gym.Env):
         action = [OUL, ROL]
         return action
 
-    def step(self, obs, action):
+    def step(self, obs, action, LT, alpha_order):
+        """
+        Predict optimal action for current state.
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        obs : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock, sl}.
+
+        action : Pair (OUL : int, ROL : int)
+
+        LT : int
+
+        alpha_order : float
+
+        Returns
+        -------
+        obs : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The updated dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock, sl}.
+
+        rew : float
+            Reward for new state.
+        """
         shop_id = obs.iloc[-1].location
         product_id = obs.iloc[-1].sku
         sales = obs.iloc[-1].sales
@@ -742,20 +872,45 @@ class SmartEnv(gym.Env):
         order = obs.iloc[-1].order
         sl = obs.iloc[-1].sl
 
-        LT = 1
-        alpha_order = 0.3
-
         sales, dem = self.sales_update(obs, shop_id, product_id, LT)
         obs = obs.append({'location': shop_id,
                           'sku': product_id,
+                          'sl': sl,
                           'order': self.order_update(obs, shop_id, product_id, action[0], action[1], alpha_order),
                           'sales': sales,
                           'stock': self.stock_update(obs, shop_id, product_id, LT, dem)},
                           ignore_index=True)
 
-        reward = 42
-        print('Step successful!')
-        return obs, reward
+        rew = self.reward(obs.iloc[-1])
+        print('\nStep successful!')
+        return obs, rew
 
-    def render(self, mode='human', close=False):
-        pass
+    def render(self, action, enviroment, reward, mode='human', close=False):
+        """
+        Print summory inforamation about current step or enviroment.
+
+        By: @HerrMorozovDmitry
+
+        Parameters
+        ----------
+        action : Pair (OUL : int, ROL : int)
+
+        enviroment : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The dataframe of the environment,
+            where n_samples is the number of samples and
+            n_features is the number of features {location, sku, order, sales, stock, sl}.
+
+        rew : float
+            Reward of the system.
+        """
+        if action != None:
+            print('Action (OUL, ROL):')
+            print(action)
+            print('State:')
+            print(enviroment.tail(1))
+            print('Reward:')
+            print(reward)
+        else:
+            print('\nEnvironment:\n', enviroment)
+            print('Final Reward:')
+            print(reward, '\n')
