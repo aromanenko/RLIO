@@ -838,7 +838,8 @@ class SmartEnv(gym.Env):
 
     def step(self, obs, action, LT, alpha_order):
         """
-        Predict optimal action for current state.
+        Simulate new state using action and return
+        updated enviroment with new state reward.
 
         By: @HerrMorozovDmitry
 
