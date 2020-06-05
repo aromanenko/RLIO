@@ -765,7 +765,7 @@ class SmartEnv(gym.Env):
 
     def reset(self):
         """
-        Return summory environment information from SMART.
+        Returns summary environment information from SMART.
 
         By: @HerrMorozovDmitry
 
@@ -791,7 +791,7 @@ class SmartEnv(gym.Env):
 
     def predict(self, obs):
         """
-        Predict optimal action for current state.
+        Predicts optimal action for current state.
 
         By: @HerrMorozovDmitry
 
@@ -838,7 +838,7 @@ class SmartEnv(gym.Env):
 
     def step(self, obs, action, LT, alpha_order):
         """
-        Simulate new state using action and return
+        Simulates new state using action and return
         updated enviroment with new state reward.
 
         By: @HerrMorozovDmitry
@@ -888,7 +888,7 @@ class SmartEnv(gym.Env):
 
     def render(self, action, enviroment, reward, mode='human', close=False):
         """
-        Print summory inforamation about current step or enviroment.
+        Prints summary inforamation about current step or enviroment.
 
         By: @HerrMorozovDmitry
 
