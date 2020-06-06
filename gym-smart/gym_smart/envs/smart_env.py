@@ -71,7 +71,7 @@ class SmartEnv(gym.Env):
         Loads data into enviroment, forming a Pandas DataFrame of location-sku
         pairs for SMART-algorithm to work with
 
-        By: @HerrMorozovDmitry
+        By: @mgcrp
 
         Parameters
         ----------
@@ -92,7 +92,7 @@ class SmartEnv(gym.Env):
         """
         Initializes a dataframe of initial states for a given location-sku pair.
 
-        By: @HerrMorozovDmitry & @mgcrp
+        By: @mgcrp
 
         Parameters
         ----------
@@ -149,7 +149,7 @@ class SmartEnv(gym.Env):
         Computes a list of tuples consisting of all triples
         (state number, OUL, ROL), where OUL > ROL.
 
-        By: @HerrMorozovDmitry
+        By: @timothysenchenko
 
         Parameters
         ----------
@@ -178,7 +178,7 @@ class SmartEnv(gym.Env):
         """
         Initializes a dataframe of actions for a given location-sku pair and range of its state indices.
 
-        By: @HerrMorozovDmitry
+        By: @timothysenchenko
 
         Parameters
         ----------
@@ -261,7 +261,7 @@ class SmartEnv(gym.Env):
         """
         Computes lambda for demand recovery
 
-        By: @HerrMorozovDmitry
+        By: @Kirili4ik
 
         Parameters
         ----------
@@ -767,7 +767,7 @@ class SmartEnv(gym.Env):
         """
         Returns summary environment information from SMART.
 
-        By: @HerrMorozovDmitry
+        By: @mgcrp
 
         Returns
         -------
@@ -841,7 +841,7 @@ class SmartEnv(gym.Env):
         Simulates new state using action and return
         updated enviroment with new state reward.
 
-        By: @HerrMorozovDmitry
+        By: @mgcrp
 
         Parameters
         ----------
@@ -890,7 +890,7 @@ class SmartEnv(gym.Env):
         """
         Prints summary inforamation about current step or enviroment.
 
-        By: @HerrMorozovDmitry
+        By: @mgcrp
 
         Parameters
         ----------
