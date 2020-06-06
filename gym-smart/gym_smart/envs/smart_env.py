@@ -140,7 +140,7 @@ class SmartEnv(gym.Env):
             state_t.dropna(inplace=True)
             state_t['order'] = 0
             # Expand state DataFrame
-            state = state.append(state_t, ignore_index=True)
+            state = state.append(state_t, ignore_index=True, sort=False)
 
         return state
 
@@ -247,12 +247,12 @@ class SmartEnv(gym.Env):
                 if state.empty:
                     empty_states = empty_states.append(
                         {'shop_id': shop_id, 'product_id': product_id},
-                        ignore_index=True
+                        ignore_index=True, sort=False
                     )
                 else:
                     not_empty_states = not_empty_states.append(
                         {'shop_id': shop_id, 'product_id': product_id},
-                        ignore_index=True
+                        ignore_index=True, sort=False
                     )
 
         return not_empty_states, empty_states
@@ -328,7 +328,7 @@ class SmartEnv(gym.Env):
                                  (self.ss_data['product_id']==product_id)]['s_qty'].max()
         demand_data = pd.DataFrame(columns=['shop_id', 'product_id', 'lambda', 'demand'])
         demand = min(stats.poisson.ppf(0.99, LAMBDA), max_sales)
-        demand_data = demand_data.append({'shop_id': shop_id, 'product_id': product_id, 'lambda': LAMBDA, 'demand': demand}, ignore_index=True)
+        demand_data = demand_data.append({'shop_id': shop_id, 'product_id': product_id, 'lambda': LAMBDA, 'demand': demand}, ignore_index=True, sort=False)
         demand_data[['shop_id', 'product_id', 'demand']] = demand_data[['shop_id', 'product_id', 'demand']].astype('int')
 
         return demand_data
@@ -356,7 +356,7 @@ class SmartEnv(gym.Env):
         for index, row in self.pairs_data.iterrows():
             shop_id = row['shop_id']
             product_id = row['product_id']
-            demand_data = demand_data.append(self.initial_demand(shop_id, product_id, alpha_lambda), ignore_index=True)
+            demand_data = demand_data.append(self.initial_demand(shop_id, product_id, alpha_lambda), ignore_index=True, sort=False)
 
         return demand_data
 
@@ -554,7 +554,7 @@ class SmartEnv(gym.Env):
                                                 'order': state_data.at[i, 'order'],
                                                 'sales': state_data.at[i, 'sales'],
                                                 'stock': state_data.at[i, 'stock']},
-                                               ignore_index=True)
+                                               ignore_index=True, sort=False)
                 else:
                     alpha_m = alpha / m
                     probability_m = probability / m
@@ -574,7 +574,7 @@ class SmartEnv(gym.Env):
                                             'order': self.order_update(env_data, shop_id, product_id, action_data.loc[action_index].OUL, action_data.loc[action_index].ROL, alpha_order),
                                             'sales': sales,
                                             'stock': self.stock_update(env_data, shop_id, product_id, LT, dem)},
-                                           ignore_index=True)
+                                           ignore_index=True, sort=False)
 
                 new_state = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order'])
                 new_state = new_state.append({'location': shop_id,
@@ -583,15 +583,15 @@ class SmartEnv(gym.Env):
                                               'stock': env_data.iloc[-1].stock,
                                               'sl': state_data.at[i, 'sl'],
                                               'order': env_data.iloc[-1].order
-                                              }, ignore_index=True)
+                                              }, ignore_index=True, sort=False)
 
                 if state_data[(state_data.sales==new_state.sales[0]) &
                               (state_data.stock==new_state.stock[0]) &
                               (state_data.sl==new_state.sl[0]) &
                               (state_data.order==new_state.order[0])].empty:
-                    state_data = state_data.append(new_state, ignore_index=True)
+                    state_data = state_data.append(new_state, ignore_index=True, sort=False)
                     j = state_data.index.max()
-                    action_data = action_data.append(self.initial_action(shop_id, product_id, [j]), ignore_index=True)
+                    action_data = action_data.append(self.initial_action(shop_id, product_id, [j]), ignore_index=True, sort=False)
                 else:
                     j = state_data[(state_data.sales==new_state.sales[0]) &
                                    (state_data.stock==new_state.stock[0]) &
@@ -688,7 +688,7 @@ class SmartEnv(gym.Env):
                                           'order': state.at[i, 'order'],
                                           'sales': state.at[i, 'sales'],
                                           'stock': state.at[i, 'stock']},
-                                         ignore_index=True)
+                                         ignore_index=True, sort=False)
                     else:
                         alpha_m = alpha / m
                         probability_m = probability / m
@@ -708,7 +708,7 @@ class SmartEnv(gym.Env):
                                       'order': self.order_update(env, shop_id, product_id, action.loc[action_index].OUL, action.loc[action_index].ROL, alpha_order),
                                       'sales': sales,
                                       'stock': self.stock_update(env, shop_id, product_id, LT, dem)},
-                                     ignore_index=True)
+                                     ignore_index=True, sort=False)
 
                     new_state = pd.DataFrame(columns=['location', 'sku', 'sales', 'stock', 'sl', 'order'])
                     new_state = new_state.append({'location': shop_id,
@@ -717,15 +717,15 @@ class SmartEnv(gym.Env):
                                                   'stock': env.iloc[-1].stock,
                                                   'sl': state.at[i, 'sl'],
                                                   'order': env.iloc[-1].order
-                                                  }, ignore_index=True)
+                                                  }, ignore_index=True, sort=False)
 
                     if state[(state.sales==new_state.sales[0]) &
                              (state.stock==new_state.stock[0]) &
                              (state.sl==new_state.sl[0]) &
                              (state.order==new_state.order[0])].empty:
-                        state = state.append(new_state, ignore_index=True)
+                        state = state.append(new_state, ignore_index=True, sort=False)
                         j = state.index.max()
-                        action = action.append(self.initial_action(shop_id, product_id, [j]), ignore_index=True)
+                        action = action.append(self.initial_action(shop_id, product_id, [j]), ignore_index=True, sort=False)
                     else:
                         j = state[(state.sales==new_state.sales[0]) &
                                   (state.stock==new_state.stock[0]) &
@@ -742,9 +742,9 @@ class SmartEnv(gym.Env):
                     i = j
                     m += 1
 
-            state_data = state_data.append(state)
-            action_data = action_data.append(action)
-            env_data = env_data.append(env)
+            state_data = state_data.append(state, sort=False)
+            action_data = action_data.append(action, sort=False)
+            env_data = env_data.append(env, sort=False)
 
         state_data[['sales', 'stock']] = state_data[['sales', 'stock']].astype('int')
         env_data = env_data.astype('int')
@@ -761,7 +761,7 @@ class SmartEnv(gym.Env):
         state_data = None
         action_data = None
         env_data = None
-        print('Environment initialized!')
+        print('Environment initialized!\n')
 
     def reset(self):
         """
@@ -786,7 +786,7 @@ class SmartEnv(gym.Env):
             where n_samples is the number of samples and
             n_features is the number of features {location, sku, order, sales, stock}.
         """
-        print('Environment reset!')
+        print('Environment reset!\n')
         return self.state_data, self.action_data, self.env_data
 
     def predict(self, obs):
@@ -880,7 +880,7 @@ class SmartEnv(gym.Env):
                           'order': self.order_update(obs, shop_id, product_id, action[0], action[1], alpha_order),
                           'sales': sales,
                           'stock': self.stock_update(obs, shop_id, product_id, LT, dem)},
-                          ignore_index=True)
+                          ignore_index=True, sort=False)
 
         rew = self.reward(obs.iloc[-1])
         print('\nStep successful!')
