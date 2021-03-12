@@ -9,6 +9,9 @@ from gym import error, spaces, utils
 ECHELON_DATA_PATH = "/Users/mgcrp/Desktop/RLIO Environment/echelon_processed_data"
 STORE_RAW_DATA_PATH = "/Users/mgcrp/Desktop/RLIO Environment/store_raw_data"
 STORE_PROCESSED_DATA_PATH = "/Users/mgcrp/Desktop/RLIO Environment/store_processed_data"
+############ DISABLE WARNINGS ############
+import warnings
+warnings.filterwarnings('ignore')
 ##########################################
 
 
@@ -28,7 +31,7 @@ def dummy_demand_restoration(df_input):
             Входные данные о продажах + восстановленный спрос
     """
     df_output = df_input.copy(deep=True)
-    df_output["demand"] = df_output["s_qty"]
+    df_output["demand"] = df_output["s_qty"].astype('int')
     return df_output
 
 
@@ -46,6 +49,29 @@ def dummy_store_data_preprocessing(input, output):
     [Output]: None
     """
     pass
+
+
+def dummy_apply_reward_calculation(row):
+    """
+    Базовый вариант расчета reward
+    Для применения в apply
+    """
+    return row.sales - row.stock * ( (1 - row.service_level) / (row.service_level) )
+
+
+def dummy_order_calculation(recommended_order):
+    """
+    Заглушка для расчета order
+    Сюда можно придумать функцию, вносящую хаос в объем заказа
+    """
+    return recommended_order
+
+def dummy_lead_time_calculation(expected_lead_time):
+    """
+    Заглушка для расчета lead_time
+    Сюда можно придумать функцию, вносящую хаос в сроки доставки
+    """
+    return expected_lead_time
 
 
 class RlioBasicEnv(gym.Env):
@@ -132,38 +158,108 @@ class RlioBasicEnv(gym.Env):
             is_done
             metadata
         """
+
+        # 1 - Получить уникальные пары shop/sku
         df_currentDay = self.stores_data[self.stores_data.curr_date == self.current_date]
 
-        # Расчет sales
-        sales = dict()
         for index, row in df_currentDay.iterrows():
-            sales[row.store_id][row.product_id] = min(
+            df_currentDay.loc[index, 'stock'] = int( self.environment_data[row.store_id][row.product_id]['stock'] )
+
+        # 2 - Расчитать продажи
+        for index, row in df_currentDay.iterrows():
+            df_currentDay.loc[index, 'sales'] = min(
                 row.demand,
                 self.environment_data[row.store_id][row.product_id]['stock'] +\
                 self.environment_data[row.store_id][row.product_id]['order_queue'][0]
             )
 
-        # Пересчет стоков
+        # 3 - Расчитать reward
+        df_currentDay['reward'] = df_currentDay.apply(dummy_apply_reward_calculation, axis=1)
 
+        # 4 - Добавляем reward и policy в лог
+        for index, row in df_currentDay.iterrows():
+            self.environment_data[row.store_id][row.product_id]['reward_log'].append( row.reward )
+            self.environment_data[row.store_id][row.product_id]['policy_log'].append( action[row.store_id][row.product_id] )
 
+        # 5 - Расчитать recomended_order
+        for index, row in df_currentDay.iterrows():
+            if row.stock <= action[row.store_id][row.product_id][0]:
+                df_currentDay.loc[index, 'recommended_order'] = max(
+                    action[row.store_id][row.product_id][1] - row.stock - self.environment_data[row.store_id][row.product_id]['order_queue'][0],
+                    0
+                )
+            else:
+                df_currentDay.loc[index, 'recommended_order'] = 0
 
-        # 1 - Расчет награды за прошлое действие
-        reward = calculate_reward()
+        # 6 - Расчитать order
+        df_currentDay['order'] = df_currentDay['recommended_order'].apply(dummy_order_calculation)
 
-        # 2 - Расчет подкапотных действий
-        pass
+        # 7 - Расчитать lead time
+        df_currentDay['fact_lead_time'] = df_currentDay['lead_time'].apply(dummy_lead_time_calculation)
 
-        # 3 - Расчет нового observation
-        pass
+        # 8 - Пересчитать stock
+        df_currentDay['stock'] -= df_currentDay['sales']
 
-        # 4 - Расчет флага is_done
-        if self.curr_date == self.finish_date:
-            is_done = True
-        else:
-            is_done = False
-            self.curr_date += pd.DateOffset(1)
+        for index, row in df_currentDay.iterrows():
+            df_currentDay.loc[index, 'stock'] += self.environment_data[row.store_id][row.product_id]['order_queue'].pop(0)
+            self.environment_data[row.store_id][row.product_id]['order_queue'].append(0)
 
-        return observation, reward, is_done, {}
+        for index, row in df_currentDay.iterrows():
+            self.environment_data[row.store_id][row.product_id]['stock'] = row.stock
+
+        # 9 - Добавить order в очередь
+        for index, row in df_currentDay.iterrows():
+            self.environment_data[row.store_id][row.product_id]['order_queue'][int(row.fact_lead_time) - 1] = row.order
+
+        # 10 - Добавить 1 день
+        self.current_date += pd.DateOffset(1)
+
+        # while self.current_date not in self.stores_data.curr_date.tolist():
+        #     date_range = pd.date_range(self.start_date, self.finish_date).tolist()
+        #     print(f"{self.current_date.strftime('%d.%m.%Y')} (Day {date_range.index(self.current_date)} of {len(date_range)}) does not exit in store data...")
+        #     print("Skipping that day...")
+        #     print()
+        #     self.current_date += pd.DateOffset(1)
+
+        # 11 - Новый observation
+        observation = dict()
+
+        df_obs = self.stores_data[self.stores_data.curr_date == self.current_date]
+
+        for store in df_obs.store_id.unique().tolist():
+            observation[store] = dict()
+
+        for index, row in df_obs.iterrows():
+            if self.environment_data[row.store_id][row.product_id]['stock'] is None:
+                self.environment_data[row.store_id][row.product_id]['stock'] = int( row.stock )
+
+            observation[row.store_id][row.product_id] = {
+                'date': self.current_date,
+                'stock': self.environment_data[row.store_id][row.product_id]['stock'],
+                'demand': row.demand,
+                'sales': min(
+                    row.demand,
+                    self.environment_data[row.store_id][row.product_id]['stock'] +\
+                    self.environment_data[row.store_id][row.product_id]['order_queue'][0]
+                ),
+                'flag_promo': row.flg_spromo,
+                'mply_qty': row.mply_qty,
+                'lead_time': row.lead_time,
+                'batch_size': row.batch_size
+            }
+
+        # 12 - Словарь наград
+        rewards = dict()
+
+        for index, row in df_currentDay.iterrows():
+            rewards[row.store_id] = dict()
+
+        for index, row in df_currentDay.iterrows():
+            rewards[row.store_id][row.product_id] = row.reward
+
+        is_done = self.current_date == self.finish_date
+
+        return observation, rewards, is_done, {}
 
 
     def reset(self):
@@ -187,7 +283,7 @@ class RlioBasicEnv(gym.Env):
 
         for index, row in df_currentDay.iterrows():
             if self.environment_data[row.store_id][row.product_id]['stock'] is None:
-                self.environment_data[row.store_id][row.product_id]['stock'] = row.stock
+                self.environment_data[row.store_id][row.product_id]['stock'] = int( row.stock )
 
             observation[row.store_id][row.product_id] = {
                 'date': self.current_date,
@@ -204,7 +300,15 @@ class RlioBasicEnv(gym.Env):
                 'batch_size': row.batch_size
             }
 
-        return observation
+        # 3 - Дефолтный словарь наград
+
+        rewards = dict()
+        for index, row in df_currentDay.iterrows():
+            rewards[row.store_id] = dict()
+        for index, row in df_currentDay.iterrows():
+            rewards[row.store_id][row.product_id] = 0
+
+        return observation, rewards, False, {}
 
 
     def render(self, mode='human'):
@@ -212,7 +316,7 @@ class RlioBasicEnv(gym.Env):
         Вывод информации о текущем состоянии среды
         """
         date_range = pd.date_range(self.start_date, self.finish_date).tolist()
-        print(f"{self.current_date.strftime('%d.%m.%Y')} (Day {date_range.index(self.current_date)} of {len(date_range)})")
+        print(f"{self.current_date.strftime('%d.%m.%Y')} (Day {date_range.index(self.current_date) + 1} of {len(date_range)})")
         print("".join(['-'] * 103))
         print('{:10s} | {:10s} | {:13s} | {:10s} | {:11s} | {:11s} | {:20s}'.format('Store', 'SKU', 'Current Stock', 'Next Order', 'Last Policy', 'Last Reward', 'Sum Reward'))
         print("".join(['-'] * 103))
@@ -224,7 +328,7 @@ class RlioBasicEnv(gym.Env):
                         int(product),
                         'N/A' if self.environment_data[store][product]['stock'] is None else str(int(self.environment_data[store][product]['stock'])),
                         int(self.environment_data[store][product]['order_queue'][0]),
-                        '-' if not len(self.environment_data[store][product]['policy_log']) else self.environment_data[store][product]['policy_log'][-1],
+                        '-' if not len(self.environment_data[store][product]['policy_log']) else str(self.environment_data[store][product]['policy_log'][-1]),
                         0 if not len(self.environment_data[store][product]['reward_log']) else self.environment_data[store][product]['reward_log'][-1],
                         0 if not len(self.environment_data[store][product]['reward_log']) else sum(self.environment_data[store][product]['reward_log'])
                     )
