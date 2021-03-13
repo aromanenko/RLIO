@@ -51,6 +51,132 @@ def dummy_store_data_preprocessing(input, output):
     pass
 
 
+def store_data_preprocessing(input_file, output_file):
+    """
+    Нормализация данных магазина
+
+    [Input]:
+        input_file
+            String
+            Путь к сырому файлу
+        output_file
+            String
+            Путь для записи обработанного файла
+    [Output]: None
+    """
+
+    # ----------------- ИМПОРТЫ ----------------
+
+    import numpy as np
+    import pandas as pd
+
+    from tqdm import tqdm
+    from os import listdir, getcwd
+    from os.path import isfile, join
+
+    # ------------------- КОД ------------------
+
+    print('1 - Загрузка сырых данных')
+
+    df = pd.read_csv(input_file, sep=';', decimal='.')
+    df.curr_date = pd.to_datetime(df.curr_date, format='%d%b%Y')
+
+    print('2 - Заполнение пропусков в датах')
+
+    store = int( input_file[input_file.rfind('_')+1:input_file.rfind('.csv')] )
+
+    tmp = []
+
+    for sku in tqdm( df.product_id.unique() ):
+        if len( pd.date_range(
+            start = df[df.product_id == sku].curr_date.min(),
+            end = df[df.product_id == sku].curr_date.max()
+        ).difference( df[df.product_id == sku].curr_date) ):
+            for date in pd.date_range(
+                start = df[df.product_id == sku].curr_date.min(),
+                end = df[df.product_id == sku].curr_date.max()
+            ).difference( df[df.product_id == sku].curr_date ):
+                tmp.append(
+                    {
+                        'product_id': sku,
+                        'store_id': store,
+                        'curr_date': date,
+                        's_qty': 0,
+                        'flg_spromo': 0,
+                        'stock': np.nan
+                    }
+                )
+
+    df = df.append(pd.DataFrame(tmp), ignore_index=True)
+
+    print('3 - Добавление метаданных')
+
+    print('3.1 - mply_qty')
+    df_meta = pd.read_csv('echelon_processed_data/mply_qty_normalized.csv', sep=';')
+    df_meta.curr_date = pd.to_datetime(df_meta.curr_date)
+
+    df = pd.merge(
+        how='left',
+        left=df,
+        left_on=['product_id', 'store_id', 'curr_date'],
+        right=df_meta,
+        right_on=['product_id', 'store_id', 'curr_date']
+    )
+
+    print('3.2 - lead time')
+    df_meta = pd.read_csv('echelon_processed_data/lead_time_normalized.csv', sep=';')
+    df_meta.curr_date = pd.to_datetime(df_meta.curr_date)
+
+    df = pd.merge(
+        how='left',
+        left=df,
+        left_on=['product_id', 'store_id', 'curr_date'],
+        right=df_meta,
+        right_on=['product_id', 'store_id', 'curr_date']
+    )
+
+    print('3.3 - batch_size')
+    df_meta = pd.read_csv('echelon_processed_data/batch_size_normalized.csv', sep=';')
+    df_meta.curr_date = pd.to_datetime(df_meta.curr_date)
+
+    df = pd.merge(
+        how='left',
+        left=df,
+        left_on=['product_id', 'store_id', 'curr_date'],
+        right=df_meta,
+        right_on=['product_id', 'store_id', 'curr_date']
+    )
+
+    print('3.4 - service_level')
+    df_meta = pd.read_csv('echelon_processed_data/service_level_normalized.csv', sep=';')
+    df_meta.curr_date = pd.to_datetime(df_meta.curr_date)
+
+    df = pd.merge(
+        how='left',
+        left=df,
+        left_on=['product_id', 'store_id', 'curr_date'],
+        right=df_meta,
+        right_on=['product_id', 'store_id', 'curr_date']
+    )
+
+    print("4 - Заполенение NULL'ов")
+    df.s_qty.fillna(0, inplace=True)
+    df.stock.fillna(0, inplace=True)
+
+    df.mply_qty.fillna(method='ffill', inplace=True)
+    df.lead_time.fillna(method='ffill', inplace=True)
+    df.batch_size.fillna(method='ffill', inplace=True)
+    df.service_level.fillna(method='ffill', inplace=True)
+
+    df.mply_qty.fillna(method='bfill', inplace=True)
+    df.lead_time.fillna(method='bfill', inplace=True)
+    df.batch_size.fillna(method='bfill', inplace=True)
+    df.service_level.fillna(method='bfill', inplace=True)
+
+    print('5 - Запись в файл')
+    df.to_csv(output_file, index=False)
+
+
 def dummy_apply_reward_calculation(row):
     """
     Базовый вариант расчета reward
@@ -65,6 +191,7 @@ def dummy_order_calculation(recommended_order):
     Сюда можно придумать функцию, вносящую хаос в объем заказа
     """
     return recommended_order
+
 
 def dummy_lead_time_calculation(expected_lead_time):
     """
@@ -111,9 +238,9 @@ class RlioBasicEnv(gym.Env):
                     pd.read_csv( os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv") )
                 )
             else:
-                dummy_store_data_preprocessing(
-                    input=os.path.join(STORE_RAW_DATA_PATH, f"MERGE_TABLE_STORE_{store}.csv"),
-                    output=os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv")
+                store_data_preprocessing(
+                    input_file=os.path.join(STORE_RAW_DATA_PATH, f"MERGE_TABLE_STORE_{store}.csv"),
+                    output_file=os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv")
                 )
                 self.stores_data = self.stores_data.append(
                     pd.read_csv( os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv") )
