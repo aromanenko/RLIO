@@ -1,10 +1,10 @@
-import scipy.stats
+from itertools import product
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-
-from scipy.stats import poisson
-from scipy.stats import ttest_ind
+import scipy.stats
+from scipy.stats import poisson, ttest_ind
 
 
 def add_missing_dates(model_df, product_id, store_id):
@@ -183,6 +183,71 @@ def add_lambda(df, product_id, store_id, lambda_nopromo, lambda_promo=None):
     return df
 
 
+from itertools import product
+
+
+def mix_features(
+    df_model,
+    product_id,
+    min_periods=3,
+    windows=[50],
+    promo_filters=[0, 1, 2],
+    deficit_filters=[0, 1, 2],
+    target_var="Demand",
+    store_id=4600,
+):
+    df = df_model.loc[
+        (df_model["product_id"] == product_id)
+        & (df_model["store_id"] == store_id)
+    ].copy()
+
+    df["Deficit"] = np.where((df.stock.isna() | df.stock == df.s_qty), 1, 0)
+
+    # loop by filter variables and window
+    for p, d, w in product(promo_filters, deficit_filters, windows):
+
+        # define approproate dates for each SKU and Store pairs
+        p_idx = d_idx = df.index
+        if p < 2:
+            p_idx = df.flg_spromo == p
+        else:
+            p_idx = df.flg_spromo == df.flg_spromo
+        if d < 2:
+            d_idx = df.Deficit == d
+        else:
+            d_idx = df.Deficit == df.Deficit
+
+        # check whether filtered df in not empty
+        if len(df[p_idx & d_idx].index) > 0:
+
+            # lagged features calculation
+            new_name = "amount_{0}prm_{1}dfc".format(p, d)
+            df[new_name] = np.where((p_idx & d_idx), df.s_qty, np.nan)
+
+            df = df.loc[
+                (df["product_id"] == product_id) & (df["store_id"] == store_id)
+            ].copy()
+            df.loc[:, new_name] = (
+                df[new_name]
+                .rolling(center=True, window=w, min_periods=min_periods)
+                .apply(np.nanmean)
+            )
+            df[new_name].fillna(method="ffill", inplace=True)
+            df[new_name].fillna(method="bfill", inplace=True)
+            df.loc[
+                (
+                    (df["product_id"] == product_id)
+                    & (df["store_id"] == store_id)
+                ),
+                new_name,
+            ] = df[new_name]
+
+    df_model["lambda"] = df[new_name]
+    del df
+
+    return df_model
+
+
 def restore_demand(df, product_id, store_id=4600, method="promo"):
     if method == "window":
         df = add_missing_dates(df, product_id, store_id)
@@ -204,5 +269,17 @@ def restore_demand(df, product_id, store_id=4600, method="promo"):
         )
         df = add_lambda(df, product_id, store_id, lambda_nopromo, lambda_promo)
         df = calculate_demand(df, product_id, store_id)
+        return df
 
+    if method == "mix_features":
+        df = add_missing_dates(df, product_id, store_id)
+        df = mix_features(
+            df_model=df, product_id=product_id, store_id=store_id
+        )
+        df = calculate_demand(df, product_id, store_id)
+
+        return df
+
+    else:
+        df = add_missing_dates(df, product_id, store_id)
         return df
