@@ -13,6 +13,7 @@ def add_missing_dates(model_df, product_id, store_id):
         (model_df["product_id"] == product_id)
         & (model_df["store_id"] == store_id)
     ].set_index("curr_date")[["stock"]]
+
     new_df = new_df.reindex(
         pd.date_range(np.min(new_df.index), np.max(new_df.index))
     ).fillna(method="ffill")
@@ -37,14 +38,18 @@ def calculate_demand(df, sku, store=4600):
     ]["s_qty"]
     lambda_value = df[((df["product_id"] == sku) & (df["store_id"] == store))][
         "lambda"
-    ]
+    ].values
+    lambda_value = lambda_value.astype(np.float64)
+    sales_oracle_day = sales_oracle_day.fillna(0)
+    sales_oracle_day = sales_oracle_day.values
+    
     df.loc[
         ((df["product_id"] == sku) & (df["store_id"] == store)), "demand"
     ] = np.fmin(
         np.full((1, len(lambda_value)), max_sales),
         np.fmax(
             np.random.poisson(lambda_value, size=len(lambda_value)),
-            sales_oracle_day,
+            sales_oracle_day, dtype=np.float64
         ),
     ).tolist()[
         0
@@ -158,7 +163,8 @@ def add_lambda_window(df, product_id, store_id=4600, window=30, min_periods=7):
         ),
         "lambda",
     ] = df["lambda"]
-
+    
+    model_df["lambda"] = model_df["lambda"].fillna(0)
     return model_df
 
 
@@ -179,7 +185,8 @@ def add_lambda(df, product_id, store_id, lambda_nopromo, lambda_promo=None):
             ),
             ["lambda"],
         ] = lambda_promo
-
+        
+    df["lambda"] = df["lambda"].fillna(0)    
     return df
 
 
@@ -254,7 +261,7 @@ def restore_demand(df, product_id, store_id=4600, method="promo"):
         df = add_lambda_window(
             df, product_id, store_id=4600, window=30, min_periods=7
         )
-        df = calculate_demand(df, product_id, store_id)
+        #df = calculate_demand(df, product_id, store_id)
 
         return df
 
@@ -268,7 +275,7 @@ def restore_demand(df, product_id, store_id=4600, method="promo"):
             enable_test=True,
         )
         df = add_lambda(df, product_id, store_id, lambda_nopromo, lambda_promo)
-        df = calculate_demand(df, product_id, store_id)
+        #df = calculate_demand(df, product_id, store_id)
         return df
 
     if method == "mix_features":
@@ -276,7 +283,7 @@ def restore_demand(df, product_id, store_id=4600, method="promo"):
         df = mix_features(
             df_model=df, product_id=product_id, store_id=store_id
         )
-        df = calculate_demand(df, product_id, store_id)
+        #df = calculate_demand(df, product_id, store_id)
 
         return df
 
