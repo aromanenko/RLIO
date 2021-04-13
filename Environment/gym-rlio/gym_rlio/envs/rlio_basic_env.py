@@ -1,6 +1,7 @@
 ############## ENV IMPORTS ##############
 import os
 import pandas as pd
+from itertools import product
 ############## GYM IMPORTS ##############
 import gym
 from gym.utils import seeding
@@ -209,6 +210,8 @@ class RlioBasicEnv(gym.Env):
         """
         Стандартная инициализация среды
         """
+        self.action_space = None
+
         self.stores_data = None
         self.environment_data = None
 
@@ -266,6 +269,32 @@ class RlioBasicEnv(gym.Env):
         # 4 - Инициализация временных рамок
         self.start_date = self.stores_data.curr_date.min()
         self.finish_date = self.stores_data.curr_date.max()
+
+        # 5 - Инициализация дискретного action_space
+        self.__generate_action_space()
+
+
+    def __generate_action_space(self):
+        """
+        Инициализирует дискретный action_space
+        """
+
+        _maxDemand = int(
+            max(
+                self.stores_data.s_qty.max(),
+                self.stores_data.demand.max()
+            )
+        )
+
+        OUL = [i for i in range(_maxDemand + 1)]
+        ROL = [i for i in range(_maxDemand + 1)]
+
+        _actions = []
+        for prod in list( product(ROL, OUL) ):
+            if prod[0] < prod[1]:
+                _actions.append(prod)
+
+        self.action_space = _actions
 
 
     def step(self, action):
