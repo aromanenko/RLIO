@@ -15,6 +15,16 @@ env.load_data(
     }
 )
 
+print( len(env.action_space) )
+print('---')
+actions = []
+for a in env.action_space:
+    if a[1] <= 20:
+        actions.append(a)
+print( len(actions) )
+print(actions)
+exit()
+
 obs, rev, done, _ = env.reset()
 env.render()
 
