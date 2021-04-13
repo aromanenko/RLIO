@@ -217,38 +217,36 @@ class RlioBasicEnv(gym.Env):
         self.current_date = None
 
 
-    def load_data(self, stores, products=None):
+    def load_data(self, products_dict):
         """
         Загрузка данных в среду
 
         [Input]:
-            stores
-                list of store_ids (int)
-                Список магазинов, по которым необходимо загрузить данные
-            products
-                list of product_ids (int)
-                Список товаров, которые надо загрузить. По умолчанию, None - загрузить все доступные
+            products_dict (dict)
+                { 'store_id': [product_ids] or 'all' }
         [Output]: None
         """
         # 1 - Загрузка данных
         self.stores_data = pd.DataFrame()
-        for store in stores:
+
+        for store in products_dict.keys():
             if os.path.exists( os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv") ):
-                self.stores_data = self.stores_data.append(
-                    pd.read_csv( os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv") )
-                )
+                df_tmp = pd.read_csv( os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv") )
+                if products_dict[store] != 'all':
+                    df_tmp = df_tmp[df_tmp.product_id.isin(products_dict[store])].reset_index(drop=True)
+                self.stores_data = self.stores_data.append( df_tmp )
+                del df_tmp
             else:
                 store_data_preprocessing(
                     input_file=os.path.join(STORE_RAW_DATA_PATH, f"MERGE_TABLE_STORE_{store}.csv"),
                     output_file=os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv")
                 )
-                self.stores_data = self.stores_data.append(
-                    pd.read_csv( os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv") )
-                )
+                df_tmp = pd.read_csv( os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv") )
+                if products_dict[store] != 'all':
+                    df_tmp = df_tmp[df_tmp.product_id.isin(products_dict[store])].reset_index(drop=True)
+                self.stores_data = self.stores_data.append( df_tmp )
+                del df_tmp
         self.stores_data.curr_date = pd.to_datetime(self.stores_data.curr_date)
-
-        if products is not None:
-            self.stores_data = self.stores_data[self.stores_data.product_id.isin(products)].reset_index(drop=True)
 
         # 2 - Восстановление спроса
         self.stores_data = dummy_demand_restoration(self.stores_data)
@@ -438,28 +436,29 @@ class RlioBasicEnv(gym.Env):
         return observation, rewards, False, {}
 
 
-    def render(self, mode='human'):
+    def render(self, mode='human', show_table=True):
         """
         Вывод информации о текущем состоянии среды
         """
         date_range = pd.date_range(self.start_date, self.finish_date).tolist()
         print(f"{self.current_date.strftime('%d.%m.%Y')} (Day {date_range.index(self.current_date) + 1} of {len(date_range)})")
-        print("".join(['-'] * 103))
-        print('{:10s} | {:10s} | {:13s} | {:10s} | {:11s} | {:11s} | {:20s}'.format('Store', 'SKU', 'Current Stock', 'Next Order', 'Last Policy', 'Last Reward', 'Sum Reward'))
-        print("".join(['-'] * 103))
-        for store in self.environment_data.keys():
-            for product in self.environment_data[store].keys():
-                print(
-                    '{:10d} | {:10d} | {:13s} | {:10d} | {:11s} | {:11.2f} | {:20.2f}'.format(
-                        int(store),
-                        int(product),
-                        'N/A' if self.environment_data[store][product]['stock'] is None else str(int(self.environment_data[store][product]['stock'])),
-                        int(self.environment_data[store][product]['order_queue'][0]),
-                        '-' if not len(self.environment_data[store][product]['policy_log']) else str(self.environment_data[store][product]['policy_log'][-1]),
-                        0 if not len(self.environment_data[store][product]['reward_log']) else self.environment_data[store][product]['reward_log'][-1],
-                        0 if not len(self.environment_data[store][product]['reward_log']) else sum(self.environment_data[store][product]['reward_log'])
+        if show_table:
+            print("".join(['-'] * 103))
+            print('{:10s} | {:10s} | {:13s} | {:10s} | {:11s} | {:11s} | {:20s}'.format('Store', 'SKU', 'Current Stock', 'Next Order', 'Last Policy', 'Last Reward', 'Sum Reward'))
+            print("".join(['-'] * 103))
+            for store in self.environment_data.keys():
+                for product in self.environment_data[store].keys():
+                    print(
+                        '{:10d} | {:10d} | {:13s} | {:10d} | {:11s} | {:11.2f} | {:20.2f}'.format(
+                            int(store),
+                            int(product),
+                            'N/A' if self.environment_data[store][product]['stock'] is None else str(int(self.environment_data[store][product]['stock'])),
+                            int(self.environment_data[store][product]['order_queue'][0]),
+                            '-' if not len(self.environment_data[store][product]['policy_log']) else str(self.environment_data[store][product]['policy_log'][-1]),
+                            0 if not len(self.environment_data[store][product]['reward_log']) else self.environment_data[store][product]['reward_log'][-1],
+                            0 if not len(self.environment_data[store][product]['reward_log']) else sum(self.environment_data[store][product]['reward_log'])
+                        )
                     )
-                )
         print()
 
 
