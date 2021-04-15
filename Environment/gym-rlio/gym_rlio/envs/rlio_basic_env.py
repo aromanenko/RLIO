@@ -1,6 +1,8 @@
 ############## ENV IMPORTS ##############
 import os
+import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from itertools import product
 ########### DEMAND RESTORATION ##########
 import sys
@@ -20,48 +22,57 @@ warnings.filterwarnings('ignore')
 ##########################################
 
 
-def dummy_demand_restoration(df_input):
-    """
-    Заглушка для функции восстановления спроса
+def __dummy_demand_restoration(df_input):
+    """Заглушка для функции восстановления спроса
 
-    [Input]:
-        df_input
+    Возвращает demand = sales
+
+    Args:
+        df_input:
             Pandas DataFrame of columns	[product_id, store_id, curr_date, s_qty, flg_spromo, stock, mply_qty,
             lead_time, batch_size, service_level]
             Входные данные о продажах
-    [Output]:
-        df_output
+
+    Returns:
+        df_output:
             Pandas DataFrame of columns	[product_id, store_id, curr_date, s_qty, flg_spromo, stock, mply_qty,
             lead_time, batch_size, service_level, demand]
             Входные данные о продажах + восстановленный спрос
     """
+
     df_output = df_input.copy(deep=True)
     df_output["demand"] = df_output["s_qty"].astype('int')
     return df_output
 
 
-def store_data_preprocessing(input_file, output_file):
+def __store_data_preprocessing(input_file, output_file):
+    """Функция для нормализации данных о продажах магазина
+
+    Делает:
+        * Загружает исходный csv из директории STORE_RAW_DATA_PATH в pandas.DataFrame
+        * Заполняет пропущенные даты между первым и последним появлением товара в магазине
+        * Добавляет метаданные из предварительно нормализованных файлов о сети из директории ECHELON_DATA_PATH:
+            * mply qty
+            * lead time
+            * batch size
+            * service level
+        * Заполняет NULL
+            * stock и s_qty - 0.0
+            * mply_qty, lead_time, batch_size, service_level - ffill + bfill
+        * Рассчитывает lamda двумя методами:
+            * promo
+            * window
+        * Сохраняет pandas.DataFrame с нормализованными данными в файл в директории STORE_PROCESSED_DATA_PATH
+
+    Args:
+        input_file:
+            [String] Путь к сырому файлу
+        output_file:
+            [String] Путь для записи обработанного файла
+
+    Returns:
+        None
     """
-    Нормализация данных магазина
-
-    [Input]:
-        input_file
-            String
-            Путь к сырому файлу
-        output_file
-            String
-            Путь для записи обработанного файла
-    [Output]: None
-    """
-
-    # ----------------- ИМПОРТЫ ----------------
-
-    import numpy as np
-    import pandas as pd
-
-    from tqdm import tqdm
-    from os import listdir, getcwd
-    from os.path import isfile, join
 
     # ------------------- КОД ------------------
 
@@ -173,46 +184,108 @@ def store_data_preprocessing(input_file, output_file):
     df.to_csv(output_file, index=False)
 
 
-def dummy_apply_reward_calculation(row):
+def __dummy_apply_reward_calculation(row):
+    """Базовый вариант расчета reward
+    Только для применения в apply к pandas.DataFrame
+
+    Args:
+        row:
+            [pandas.Series] Одна строка из pandas.DataFrame
+
+    Returns:
+        reward:
+            [float] Рассчитанное значение reward
     """
-    Базовый вариант расчета reward
-    Для применения в apply
-    """
+
     return row.sales - row.stock * ( (1 - row.service_level) / (row.service_level) )
 
 
-def dummy_apply_reward_calculation_baseline(row):
+def __dummy_apply_reward_calculation_baseline(row):
+    """Базовый вариант расчета reward
+    Необходима для расчета reward по данным из реальной ритейл сети
+    Только для применения в apply к pandas.DataFrame
+
+    Args:
+        row:
+            [pandas.Series] Одна строка из pandas.DataFrame
+
+    Returns:
+        reward:
+            [float] Рассчитанное значение reward
     """
-    Базовый вариант расчета reward
-    Для применения в apply
-    """
+
     return row.s_qty - row.stock * ( (1 - row.service_level) / (row.service_level) )
 
 
-def dummy_order_calculation(recommended_order):
-    """
-    Заглушка для расчета order
+def __dummy_order_calculation(recommended_order):
+    """Заглушка для расчета order
     Сюда можно придумать функцию, вносящую хаос в объем заказа
+
+    Args:
+        recommended_order:
+            [float] Значение recommended_order, полученное с учетом текущей политики пополнения
+
+    Returns:
+        fact_order:
+            [float] Фактическое значение order
     """
+
     return recommended_order
 
 
-def dummy_lead_time_calculation(expected_lead_time):
-    """
-    Заглушка для расчета lead_time
+def __dummy_lead_time_calculation(expected_lead_time):
+    """Заглушка для расчета lead_time
     Сюда можно придумать функцию, вносящую хаос в сроки доставки
+
+    Args:
+        expected_lead_time:
+            [float] Плановое время доставки
+
+    Returns:
+        fact_lead_time:
+            [float] Фактическое время доставки
     """
     return expected_lead_time
 
 
 class RlioBasicEnv(gym.Env):
+    """Среда, имитирующая поведение логистической сети.
+    Разработана с использованием фреймворка OpenAI Gym
+
+    Variables:
+        * action_space: [list of pairs (ROL::int, OUL::int)] дискретный action space
+        * stores_data: [pandas.DataFrame] Информация о фактических продажах товаров
+        * environment_data [dict] Информация о состоянии среды в следующем формате:
+            {
+                store_id::int: {
+                    product_id::int: {
+                        'stock': [float] текущее количество товара на стоке
+                        'reward_log': [list of floats] история reward для данной пары товар-магазин
+                        'policy_log': [list of pairs (ROL::int, OUL::int)] история изменения политики
+                        'order_queue': [list of ints] очередь заказанных товаров к доставке на 100 дней вперед
+                    }
+                }
+            }
+        * demand_restoration_type [string - 'dummy', 'promo' or 'window'] метод восстановления спроса в среде
+        * start_date [datetime.date] Дата начала
+        * finish_date [datetime.date] Последняя дата
+        * current_date [datetime.date] Текущая дата
+
+    Methods:
+        * load_data(self, products_dict, demand_restoration_type='window')
+        * step(self, action)
+        * reset(self)
+        * render(self, mode='human', show_table=True)
+        * close(self)
+        * compute_baseline_realworld(self)
+    """
+
     metadata = {'render.modes': ['human']}
 
 
     def __init__(self):
-        """
-        Стандартная инициализация среды
-        """
+        """Стандартная инициализация среды"""
+
         self.action_space = None
 
         self.stores_data = None
@@ -225,14 +298,19 @@ class RlioBasicEnv(gym.Env):
 
 
     def load_data(self, products_dict, demand_restoration_type='window'):
-        """
-        Загрузка данных в среду
+        """Загрузка данных в среду
 
-        [Input]:
-            products_dict (dict)
-                { 'store_id': [product_ids] or 'all' }
-        [Output]: None
+        Agrs:
+            products_dict:
+                [dict] Словарь с описанием данных, которые необходимо загрузить в среду
+                    { 'store_id': [product_ids] or 'all' }
+            demand_restoration_type:
+                [string - 'dummy', 'promo' or 'window'] метод восстановления спроса в среде
+
+        Returns:
+            None
         """
+        
         # 1 - Загрузка данных
         self.stores_data = pd.DataFrame()
 
@@ -244,7 +322,7 @@ class RlioBasicEnv(gym.Env):
                 self.stores_data = self.stores_data.append( df_tmp )
                 del df_tmp
             else:
-                store_data_preprocessing(
+                __store_data_preprocessing(
                     input_file=os.path.join(STORE_RAW_DATA_PATH, f"MERGE_TABLE_STORE_{store}.csv"),
                     output_file=os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv")
                 )
@@ -260,7 +338,7 @@ class RlioBasicEnv(gym.Env):
         self.demand_restoration_type = demand_restoration_type
 
         if demand_restoration_type == 'dummy':
-            self.stores_data = dummy_demand_restoration(self.stores_data)
+            self.stores_data = __dummy_demand_restoration(self.stores_data)
         elif demand_restoration_type == 'promo':
             for store in self.stores_data.store_id.unique():
                 for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
@@ -296,8 +374,19 @@ class RlioBasicEnv(gym.Env):
 
 
     def __generate_action_space(self):
-        """
-        Инициализирует дискретный action_space
+        """Инициализирует дискретный action_space
+        Сохраняет полученный список возможных action в self.action_space
+
+        Делает:
+            * Считает список всех возможных значений OUL (максимальный demand + 1)
+            * Считает список всех возможных значений ROL (максимальный demand)
+            * Сохраняет все пары вида (ROL, OUL), где ROL < OUL
+
+        Agrs:
+            None
+
+        Returns:
+            None
         """
 
         _maxDemand = int(
@@ -308,7 +397,7 @@ class RlioBasicEnv(gym.Env):
         )
 
         OUL = [i for i in range(_maxDemand + 1)]
-        ROL = [i for i in range(_maxDemand + 1)]
+        ROL = [i for i in range(_maxDemand)]
 
         _actions = []
         for prod in list( product(ROL, OUL) ):
@@ -319,19 +408,58 @@ class RlioBasicEnv(gym.Env):
 
 
     def step(self, action):
-        """
-        Шаг среды
+        """Осуществляет один шаг среды
 
-        [Input]: {
-            'store_id': {
-                'product_id': ('ROL': int, 'OUL': int)
-                }
-            }
-        [Output]:
-            observation
-            reward
-            is_done
-            metadata
+        Делает:
+            * Получает уникальные пары shop/sku
+            * Расчитывает продажи
+            * Расчитывает reward
+            * Добавляет reward и выбранную агентом policy в лог
+            * Исходя из полученной от агента policy рассчитывает recomended_order
+            * Исходя из recomended_order рассчитывает order
+            * Исходя из expected_lead_time рассчитывает lead_time
+            * Перерасчитывает stock
+            * Добавляет order в очередь на доставку
+            * Добаляет 1 день к current_date
+            * Расчитывает новый observation и reward
+
+        Args:
+            action:
+                [dict] Словарь со всеми действиями, которые делает агент на этом шаге
+                    {
+                        store_id::int: {
+                            product_id::int: (ROL::int, OUL::int)
+                        }
+                    }
+
+        Returns:
+            observation:
+                [dict] словарь с новым наблюдением
+                    {
+                        store_id::int: {
+                            product_id::int: {
+                                'date': [datetime.date] Дата (мы смотрим на конец дня)
+                                'stock': [int] Текущие остатки товара в магазине (мы смотрим на конец дня)
+                                'demand': [int] Спрос за день (мы смотрим на конец дня)
+                                'sales': [int] Продажи за день (мы смотрим на конец дня)
+                                'flag_promo': [bool] Флаг того, было ли на этот товар промо-предложение
+                                'mply_qty': [int] Кратность заказа
+                                'lead_time': [int] Ожидаемое время доставки заказа
+                                'batch_size': [int] Количество товара в одной упаковке
+                            }
+                        }
+                    }
+            reward:
+                [dict] словарь с наградами за текущую итерацию
+                    {
+                        store_id::int: {
+                            product_id::int: reward::float
+                        }
+                    }
+            is_done:
+                [bool] флаг того, что цикл закончился
+            metadata:
+                [dict] какие-нибудь произвольные метаданные; по-умолчанию - {}
         """
 
         # 1 - Получить уникальные пары shop/sku
@@ -349,7 +477,7 @@ class RlioBasicEnv(gym.Env):
             )
 
         # 3 - Расчитать reward
-        df_currentDay['reward'] = df_currentDay.apply(dummy_apply_reward_calculation, axis=1)
+        df_currentDay['reward'] = df_currentDay.apply(__dummy_apply_reward_calculation, axis=1)
 
         # 4 - Добавляем reward и policy в лог
         for index, row in df_currentDay.iterrows():
@@ -367,10 +495,10 @@ class RlioBasicEnv(gym.Env):
                 df_currentDay.loc[index, 'recommended_order'] = 0
 
         # 6 - Расчитать order
-        df_currentDay['order'] = df_currentDay['recommended_order'].apply(dummy_order_calculation)
+        df_currentDay['order'] = df_currentDay['recommended_order'].apply(__dummy_order_calculation)
 
         # 7 - Расчитать lead time
-        df_currentDay['fact_lead_time'] = df_currentDay['lead_time'].apply(dummy_lead_time_calculation)
+        df_currentDay['fact_lead_time'] = df_currentDay['lead_time'].apply(__dummy_lead_time_calculation)
 
         # 8 - Пересчитать stock
         df_currentDay['stock'] -= df_currentDay['sales']
@@ -438,20 +566,48 @@ class RlioBasicEnv(gym.Env):
 
 
     def reset(self):
-        """
-        Сброс среды к начальному состоянию
+        """Сброс среды к начальному состоянию
         Возвращает первый observation
 
-        [Input]: None
-        [Output]:
-            observation
+        Args:
+            None
+
+        Returns:
+            observation:
+                [dict] словарь с новым наблюдением
+                    {
+                        store_id::int: {
+                            product_id::int: {
+                                'date': [datetime.date] Дата (мы смотрим на конец дня)
+                                'stock': [int] Текущие остатки товара в магазине (мы смотрим на конец дня)
+                                'demand': [int] Спрос за день (мы смотрим на конец дня)
+                                'sales': [int] Продажи за день (мы смотрим на конец дня)
+                                'flag_promo': [bool] Флаг того, было ли на этот товар промо-предложение
+                                'mply_qty': [int] Кратность заказа
+                                'lead_time': [int] Ожидаемое время доставки заказа
+                                'batch_size': [int] Количество товара в одной упаковке
+                            }
+                        }
+                    }
+            reward:
+                [dict] словарь с наградами за текущую итерацию
+                    {
+                        store_id::int: {
+                            product_id::int: reward::float
+                        }
+                    }
+            is_done:
+                [bool] флаг того, что цикл закончился
+            metadata:
+                [dict] какие-нибудь произвольные метаданные; по-умолчанию - {}
         """
+
         # 1 - Возвращаем счетчик дней в начало
         self.current_date = self.start_date
 
         # 2 - Восстановление спроса
         if self.demand_restoration_type == 'dummy':
-            self.stores_data = dummy_demand_restoration(self.stores_data)
+            self.stores_data = __dummy_demand_restoration(self.stores_data)
         elif self.demand_restoration_type == 'promo':
             for store in self.stores_data.store_id.unique():
                 for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
@@ -504,9 +660,20 @@ class RlioBasicEnv(gym.Env):
 
 
     def render(self, mode='human', show_table=True):
+        """Вывод информации о текущем состоянии среды
+        Если show_table=True - выводит информацию о текущем состоянии среды в виде таблицы в консоль
+        Иначе - просто печатает информацию о том, что выполнение одного шага завершено
+
+        Args:
+            mode:
+                [string] human (default для OpenAI Gym)
+            show_table:
+                [bool] Флаг о том, нужно ли выводить полный вывод
+
+        Returns:
+            None
         """
-        Вывод информации о текущем состоянии среды
-        """
+
         date_range = pd.date_range(self.start_date, self.finish_date).tolist()
         print(f"{self.current_date.strftime('%d.%m.%Y')} (Day {date_range.index(self.current_date) + 1} of {len(date_range)})")
         if show_table:
@@ -530,21 +697,38 @@ class RlioBasicEnv(gym.Env):
 
 
     def close(self):
-        """
-        Выключение среды
+        """Выключение среды
         Метод есть в документации OpenAI Gym, но реализован даже не во всех их средах.
+
+        Args:
+            None
+
+        Returns:
+            None
         """
+
         pass
 
 
     def compute_baseline_realworld(self):
-        """
-        Считает награду так, как её бы получил фактический агент,
-            данные которого мы используем как входные
+        """Считает награду так, как её бы получил фактический агент, данные которого мы используем как входные
+
+        Args:
+            None
+
+        Returns:
+            df_result:
+                [pandas.DataFrame] Информация о награде фактического агента за весь период; Состоит из полей:
+                    'store_id' [int] ID магазина
+                    'product_id' [int] ID товара
+                    'first_appeared' [datetime.date] Дата первого появления товара в магазине
+                    'last_appeared' [datetime.date] Дата последнего появления товара в магазине
+                    'sum_reward' [float] Суммарный reward за время, когда товар был в ассортименте магазина
+                    'log_reward' [float] Лог reward'а по дням
         """
 
         df_tmp = self.stores_data.copy()
-        df_tmp['reward'] = df_tmp.apply(dummy_apply_reward_calculation_baseline, axis=1)
+        df_tmp['reward'] = df_tmp.apply(__dummy_apply_reward_calculation_baseline, axis=1)
 
         df_result = df_tmp.groupby(['store_id', 'product_id']).agg(
             {
