@@ -16,17 +16,24 @@ env.load_data(
 )
 
 print(env.compute_baseline_realworld())
-# print(env.stores_data.head(10))
-#
-# print( len(env.action_space) )
-# print('---')
-# actions = []
-# for a in env.action_space:
-#     if a[1] <= 20:
-#         actions.append(a)
-# print( len(actions) )
-# print(actions)
-exit()
+print('\n---\n')
+
+# ---
+
+print(env.stores_data.head(10))
+print('\n---\n')
+
+# ---
+
+print( f'Full descrete action space of size\t{len(env.action_space)}' )
+actions = []
+for a in env.action_space:
+    if a[1] <= 20:
+        actions.append(a)
+print( f'Smaller descrete action space (OUL <= 20) of size\t{len(actions)}' )
+print('\n---\n')
+
+# ---
 
 obs, rev, done, _ = env.reset()
 env.render()
@@ -41,3 +48,5 @@ while not done:
     obs, rev, done, _ = env.step( act )
 
     env.render()
+
+    exit()

@@ -22,7 +22,7 @@ warnings.filterwarnings('ignore')
 ##########################################
 
 
-def __dummy_demand_restoration(df_input):
+def _dummy_demand_restoration(df_input):
     """Заглушка для функции восстановления спроса
 
     Возвращает demand = sales
@@ -45,7 +45,7 @@ def __dummy_demand_restoration(df_input):
     return df_output
 
 
-def __store_data_preprocessing(input_file, output_file):
+def _store_data_preprocessing(input_file, output_file):
     """Функция для нормализации данных о продажах магазина
 
     Делает:
@@ -184,7 +184,7 @@ def __store_data_preprocessing(input_file, output_file):
     df.to_csv(output_file, index=False)
 
 
-def __dummy_apply_reward_calculation(row):
+def _dummy_apply_reward_calculation(row):
     """Базовый вариант расчета reward
     Только для применения в apply к pandas.DataFrame
 
@@ -200,7 +200,7 @@ def __dummy_apply_reward_calculation(row):
     return row.sales - row.stock * ( (1 - row.service_level) / (row.service_level) )
 
 
-def __dummy_apply_reward_calculation_baseline(row):
+def _dummy_apply_reward_calculation_baseline(row):
     """Базовый вариант расчета reward
     Необходима для расчета reward по данным из реальной ритейл сети
     Только для применения в apply к pandas.DataFrame
@@ -217,7 +217,7 @@ def __dummy_apply_reward_calculation_baseline(row):
     return row.s_qty - row.stock * ( (1 - row.service_level) / (row.service_level) )
 
 
-def __dummy_order_calculation(recommended_order):
+def _dummy_order_calculation(recommended_order):
     """Заглушка для расчета order
     Сюда можно придумать функцию, вносящую хаос в объем заказа
 
@@ -233,7 +233,7 @@ def __dummy_order_calculation(recommended_order):
     return recommended_order
 
 
-def __dummy_lead_time_calculation(expected_lead_time):
+def _dummy_lead_time_calculation(expected_lead_time):
     """Заглушка для расчета lead_time
     Сюда можно придумать функцию, вносящую хаос в сроки доставки
 
@@ -310,7 +310,7 @@ class RlioBasicEnv(gym.Env):
         Returns:
             None
         """
-        
+
         # 1 - Загрузка данных
         self.stores_data = pd.DataFrame()
 
@@ -322,7 +322,7 @@ class RlioBasicEnv(gym.Env):
                 self.stores_data = self.stores_data.append( df_tmp )
                 del df_tmp
             else:
-                __store_data_preprocessing(
+                _store_data_preprocessing(
                     input_file=os.path.join(STORE_RAW_DATA_PATH, f"MERGE_TABLE_STORE_{store}.csv"),
                     output_file=os.path.join(STORE_PROCESSED_DATA_PATH, f"STORE_{store}.csv")
                 )
@@ -338,7 +338,7 @@ class RlioBasicEnv(gym.Env):
         self.demand_restoration_type = demand_restoration_type
 
         if demand_restoration_type == 'dummy':
-            self.stores_data = __dummy_demand_restoration(self.stores_data)
+            self.stores_data = _dummy_demand_restoration(self.stores_data)
         elif demand_restoration_type == 'promo':
             for store in self.stores_data.store_id.unique():
                 for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
@@ -370,10 +370,10 @@ class RlioBasicEnv(gym.Env):
         self.finish_date = self.stores_data.curr_date.max()
 
         # 5 - Инициализация дискретного action_space
-        self.__generate_action_space()
+        self._generate_action_space()
 
 
-    def __generate_action_space(self):
+    def _generate_action_space(self):
         """Инициализирует дискретный action_space
         Сохраняет полученный список возможных action в self.action_space
 
@@ -477,7 +477,7 @@ class RlioBasicEnv(gym.Env):
             )
 
         # 3 - Расчитать reward
-        df_currentDay['reward'] = df_currentDay.apply(__dummy_apply_reward_calculation, axis=1)
+        df_currentDay['reward'] = df_currentDay.apply(_dummy_apply_reward_calculation, axis=1)
 
         # 4 - Добавляем reward и policy в лог
         for index, row in df_currentDay.iterrows():
@@ -495,10 +495,10 @@ class RlioBasicEnv(gym.Env):
                 df_currentDay.loc[index, 'recommended_order'] = 0
 
         # 6 - Расчитать order
-        df_currentDay['order'] = df_currentDay['recommended_order'].apply(__dummy_order_calculation)
+        df_currentDay['order'] = df_currentDay['recommended_order'].apply(_dummy_order_calculation)
 
         # 7 - Расчитать lead time
-        df_currentDay['fact_lead_time'] = df_currentDay['lead_time'].apply(__dummy_lead_time_calculation)
+        df_currentDay['fact_lead_time'] = df_currentDay['lead_time'].apply(_dummy_lead_time_calculation)
 
         # 8 - Пересчитать stock
         df_currentDay['stock'] -= df_currentDay['sales']
@@ -607,7 +607,7 @@ class RlioBasicEnv(gym.Env):
 
         # 2 - Восстановление спроса
         if self.demand_restoration_type == 'dummy':
-            self.stores_data = __dummy_demand_restoration(self.stores_data)
+            self.stores_data = _dummy_demand_restoration(self.stores_data)
         elif self.demand_restoration_type == 'promo':
             for store in self.stores_data.store_id.unique():
                 for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
@@ -728,7 +728,7 @@ class RlioBasicEnv(gym.Env):
         """
 
         df_tmp = self.stores_data.copy()
-        df_tmp['reward'] = df_tmp.apply(__dummy_apply_reward_calculation_baseline, axis=1)
+        df_tmp['reward'] = df_tmp.apply(_dummy_apply_reward_calculation_baseline, axis=1)
 
         df_result = df_tmp.groupby(['store_id', 'product_id']).agg(
             {
