@@ -2,14 +2,18 @@
 import os
 import pandas as pd
 from itertools import product
+########### DEMAND RESTORATION ##########
+import sys
+sys.path.append('/Users/mgcrp/Documents/GitHub/RLIO/Demand Restoration')
+from restore_demand import add_lambda_window, add_lambda_promo, restore_demand
 ############## GYM IMPORTS ##############
 import gym
 from gym.utils import seeding
 from gym import error, spaces, utils
 ################ SETTINGS ################
-ECHELON_DATA_PATH = "/Users/mgcrp/Desktop/RLIO Environment/echelon_processed_data"
-STORE_RAW_DATA_PATH = "/Users/mgcrp/Desktop/RLIO Environment/store_raw_data"
-STORE_PROCESSED_DATA_PATH = "/Users/mgcrp/Desktop/RLIO Environment/store_processed_data"
+ECHELON_DATA_PATH = "/Users/mgcrp/Documents/GitHub/RLIO/Environment/echelon_processed_data"
+STORE_RAW_DATA_PATH = "/Users/mgcrp/Documents/GitHub/RLIO/Environment/store_raw_data"
+STORE_PROCESSED_DATA_PATH = "/Users/mgcrp/Documents/GitHub/RLIO/Environment/store_processed_data"
 ############ DISABLE WARNINGS ############
 import warnings
 warnings.filterwarnings('ignore')
@@ -113,7 +117,7 @@ def store_data_preprocessing(input_file, output_file):
     print('3 - Добавление метаданных')
 
     print('3.1 - mply_qty')
-    df_meta = pd.read_csv('echelon_processed_data/mply_qty_normalized.csv', sep=';')
+    df_meta = pd.read_csv(os.path.join(ECHELON_DATA_PATH, "mply_qty_normalized.csv"), sep=';')
     df_meta.curr_date = pd.to_datetime(df_meta.curr_date)
 
     df = pd.merge(
@@ -125,7 +129,7 @@ def store_data_preprocessing(input_file, output_file):
     )
 
     print('3.2 - lead time')
-    df_meta = pd.read_csv('echelon_processed_data/lead_time_normalized.csv', sep=';')
+    df_meta = pd.read_csv(os.path.join(ECHELON_DATA_PATH, "lead_time_normalized.csv"), sep=';')
     df_meta.curr_date = pd.to_datetime(df_meta.curr_date)
 
     df = pd.merge(
@@ -137,7 +141,7 @@ def store_data_preprocessing(input_file, output_file):
     )
 
     print('3.3 - batch_size')
-    df_meta = pd.read_csv('echelon_processed_data/batch_size_normalized.csv', sep=';')
+    df_meta = pd.read_csv(os.path.join(ECHELON_DATA_PATH, "batch_size_normalized.csv"), sep=';')
     df_meta.curr_date = pd.to_datetime(df_meta.curr_date)
 
     df = pd.merge(
@@ -149,7 +153,7 @@ def store_data_preprocessing(input_file, output_file):
     )
 
     print('3.4 - service_level')
-    df_meta = pd.read_csv('echelon_processed_data/service_level_normalized.csv', sep=';')
+    df_meta = pd.read_csv(os.path.join(ECHELON_DATA_PATH, "service_level_normalized.csv"), sep=';')
     df_meta.curr_date = pd.to_datetime(df_meta.curr_date)
 
     df = pd.merge(
@@ -174,7 +178,14 @@ def store_data_preprocessing(input_file, output_file):
     df.batch_size.fillna(method='bfill', inplace=True)
     df.service_level.fillna(method='bfill', inplace=True)
 
-    print('5 - Запись в файл')
+    print('5 - Расчет lambda')
+
+    for store_id in df.store_id.unique():
+        for product_id in tqdm( df[df.store_id == store_id].product_id.unique(), total=df[df.store_id == store_id].product_id.nunique() ):
+            df = add_lambda_promo(df, store_id=store_id, product_id=product_id)
+            df = add_lambda_window(df, store_id=store_id, product_id=product_id)
+
+    print('6 - Запись в файл')
     df.to_csv(output_file, index=False)
 
 
@@ -184,6 +195,14 @@ def dummy_apply_reward_calculation(row):
     Для применения в apply
     """
     return row.sales - row.stock * ( (1 - row.service_level) / (row.service_level) )
+
+
+def dummy_apply_reward_calculation_baseline(row):
+    """
+    Базовый вариант расчета reward
+    Для применения в apply
+    """
+    return row.s_qty - row.stock * ( (1 - row.service_level) / (row.service_level) )
 
 
 def dummy_order_calculation(recommended_order):
@@ -214,13 +233,14 @@ class RlioBasicEnv(gym.Env):
 
         self.stores_data = None
         self.environment_data = None
+        self.demand_restoration_type = None
 
         self.start_date = None
         self.finish_date = None
         self.current_date = None
 
 
-    def load_data(self, products_dict):
+    def load_data(self, products_dict, demand_restoration_type='window'):
         """
         Загрузка данных в среду
 
@@ -250,9 +270,21 @@ class RlioBasicEnv(gym.Env):
                 self.stores_data = self.stores_data.append( df_tmp )
                 del df_tmp
         self.stores_data.curr_date = pd.to_datetime(self.stores_data.curr_date)
+        self.stores_data.loc[self.stores_data.stock < 0, 'stock'] = 0
 
         # 2 - Восстановление спроса
-        self.stores_data = dummy_demand_restoration(self.stores_data)
+        self.demand_restoration_type = demand_restoration_type
+
+        if demand_restoration_type == 'dummy':
+            self.stores_data = dummy_demand_restoration(self.stores_data)
+        elif demand_restoration_type == 'promo':
+            for store in self.stores_data.store_id.unique():
+                for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
+                    self.stores_data = restore_demand(self.stores_data, store, product, type='promo')
+        elif demand_restoration_type == 'window':
+            for store in self.stores_data.store_id.unique():
+                for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
+                    self.stores_data = restore_demand(self.stores_data, store, product, type='window')
 
         # 3 - Инициализация данных среды
         self.environment_data = dict()
@@ -428,6 +460,18 @@ class RlioBasicEnv(gym.Env):
         # 1 - Возвращаем счетчик дней в начало
         self.current_date = self.start_date
 
+        # 2 - Восстановление спроса
+        if self.demand_restoration_type == 'dummy':
+            self.stores_data = dummy_demand_restoration(self.stores_data)
+        elif self.demand_restoration_type == 'promo':
+            for store in self.stores_data.store_id.unique():
+                for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
+                    self.stores_data = restore_demand(self.stores_data, store, product, type='promo')
+        elif self.demand_restoration_type == 'window':
+            for store in self.stores_data.store_id.unique():
+                for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
+                    self.stores_data = restore_demand(self.stores_data, store, product, type='window')
+
         # 2 - Расчет первого observation
         observation = dict()
 
@@ -497,3 +541,23 @@ class RlioBasicEnv(gym.Env):
         Метод есть в документации OpenAI Gym, но реализован даже не во всех их средах.
         """
         pass
+
+
+    def compute_baseline_realworld(self):
+        """
+        Считает награду так, как её бы получил фактический агент,
+            данные которого мы используем как входные
+        """
+
+        df_tmp = self.stores_data.copy()
+        df_tmp['reward'] = df_tmp.apply(dummy_apply_reward_calculation_baseline, axis=1)
+
+        df_result = df_tmp.groupby(['store_id', 'product_id']).agg(
+            {
+                'curr_date': ['min', 'max'],
+                'reward': ['sum', list]
+            }
+        ).reset_index()
+        df_result.columns = ['store_id', 'product_id', 'first_appeared', 'last_appeared', 'sum_reward', 'log_reward']
+
+        return df_result
