@@ -1,25 +1,38 @@
+# ----------------------------------------------------------------------
+# ------------------------------- ИМПОРТЫ ------------------------------
+# ----------------------------------------------------------------------
+
 import numpy as np
 import pandas as pd
 
 from itertools import product
 from scipy.stats import poisson, ttest_ind
 
+# ----------------------------------------------------------------------
+# -------------------- РАСЧЕТ LAMBDA ОКОННЫМ МЕТОДОМ -------------------
+# ----------------------------------------------------------------------
 
 def add_lambda_window(df, store_id, product_id, window=30, min_periods=7):
-    """
-    Добавление lambda, расчитанного оконным методом
+    """Добавление lambda, расчитанного оконным методом
 
-    [Input]:
-        df - pandas.DataFrame()
-            Исходный DataFrame
-        product_id - int
-        store_id - int
-        window - int
-        min_periods - int
-    [Output]:
+    Args:
+        df:
+            [pandas.DataFrame] Исходный DataFrame
+        store_id:
+            [int] ID магазина
+        product_id:
+            [int] ID товара
+        window:
+            [int] Размер окна
+        min_periods
+            [int] --TBD--
+
+    Returns:
         model_df
+            [pandas.DataFrame] Исходный DataFrame + рассчитанная lambda
     """
-    model_df = df
+
+    model_df = df.copy()
 
     # Choose only needed data and perform rolling
     df = df.loc[
@@ -45,22 +58,29 @@ def add_lambda_window(df, store_id, product_id, window=30, min_periods=7):
     ] = df["lambda_window"]
 
     model_df["lambda_window"] = model_df["lambda_window"].fillna(0)
+
     return model_df
 
 
 # ----------------------------------------------------------------------
+# ---------------- РАСЧЕТ LAMBDA С ПОМОЩЬЮ ФЛАГА ПРОМО -----------------
+# ----------------------------------------------------------------------
 
 
 def ttest_promo(df_promo, df_nopromo):
-    """
-    TBD
+    """TBD
 
-    [Input]:
-        df_promo
-        df_nopromo
-    [Output]:
-        flag
-        decision
+    Args:
+        df_promo:
+            [pandas.DataFrame] TBD
+        df_nopromo:
+            [pandas.DataFrame] TBD
+
+    Returns:
+        flag:
+            [bool] TBD
+        decision:
+            [string] TBD
     """
 
     # Check data for correctness
@@ -83,21 +103,28 @@ def ttest_promo(df_promo, df_nopromo):
     return flag, decision
 
 
-def calculate_lambda_promo(df, product_id, store_id=4600, teta=1, enable_test=True):
-    """
-    Расчет lambda на основе флага промо
+def calculate_lambda_promo(df, store_id, product_id, teta=1, enable_test=True):
+    """Расчет lambda на основе флага промо
 
-    [Input]:
-        df - pandas.DataFrame()
-            Исходный DataFrame
-        product_id - int
-        store_id - int
-        teta - int
-        enable_test - bool
-    [Output]:
-        lambda_nopromo
-        lambda_promo
-        decision
+    Args:
+        df:
+            [pandas.DataFrame] Исходный DataFrame
+        store_id:
+            [int] ID магазина
+        product_id:
+            [int] ID товара
+        teta:
+            [float] TBD
+        enable_test:
+            [bool] TBD
+
+    Returns:
+        lambda_nopromo:
+            [float] - TBD
+        lambda_promo:
+            [float] - TBD
+        decision:
+            [sting] - TBD
     """
 
     # Choose data without promo for a given product
@@ -155,18 +182,19 @@ def calculate_lambda_promo(df, product_id, store_id=4600, teta=1, enable_test=Tr
 
 
 def add_lambda_promo(df, store_id, product_id):
-    """
-    TBD
+    """Расчет lambda методом промо и добавление к датафрейму
 
-    [Input]:
-        df - pandas.DataFrame()
-            Исходный DataFrame
-        product_id - int
-        store_id - int
-        lambda_nopromo - float
-        lambda_promo - float
-    [Output]:
-        df
+    Args:
+        df:
+            [pandas.DataFrame] Исходный DataFrame
+        store_id:
+            [int] ID магазина
+        product_id:
+            [int] ID товара
+
+    Returns:
+        df:
+            [pandas.DataFrame] Исходный DataFrame + lambda_promo
     """
 
     lambda_nopromo, lambda_promo, _ = calculate_lambda_promo(
@@ -198,9 +226,28 @@ def add_lambda_promo(df, store_id, product_id):
 
 
 # ----------------------------------------------------------------------
+# ------------------------ СЭМПЛИРОВАНИЕ СПРОСА ------------------------
+# ----------------------------------------------------------------------
 
 
 def restore_demand(df, store_id, product_id, type='window'):
+    """Сэмплирование спроса из распределения Пуассона
+
+    Args:
+        df:
+            [pandas.DataFrame] Исходный DataFrame
+        store_id:
+            [int] ID магазина
+        product_id:
+            [int] ID товара
+        type:
+            [string - 'promo' or 'window'] Тип lambda для восстановления спроса
+
+    Returns:
+        df:
+            [pandas.DataFrame] Исходный DataFrame + demand
+    """
+
     max_sales = df[
         (df["product_id"] == product_id) & (df["store_id"] == store_id)
     ].s_qty.max()
