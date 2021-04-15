@@ -40,22 +40,6 @@ def dummy_demand_restoration(df_input):
     return df_output
 
 
-def dummy_store_data_preprocessing(input, output):
-    """
-    Заглушка для функции нормализации данных магазина
-
-    [Input]:
-        input
-            String
-            Путь к сырому файлу
-        output
-            String
-            Путь для записи обработанного файла
-    [Output]: None
-    """
-    pass
-
-
 def store_data_preprocessing(input_file, output_file):
     """
     Нормализация данных магазина
@@ -286,6 +270,11 @@ class RlioBasicEnv(gym.Env):
                 for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
                     self.stores_data = restore_demand(self.stores_data, store, product, type='window')
 
+        self.stores_data.demand = self.stores_data.apply(
+            lambda x: x.demand if (x.s_qty == x.stock) or (x.stock <= 0) else x.s_qty,
+            axis=1
+        )
+
         # 3 - Инициализация данных среды
         self.environment_data = dict()
         for store in self.stores_data.store_id.unique().tolist():
@@ -471,6 +460,11 @@ class RlioBasicEnv(gym.Env):
             for store in self.stores_data.store_id.unique():
                 for product in self.stores_data[self.stores_data.store_id == store].product_id.unique():
                     self.stores_data = restore_demand(self.stores_data, store, product, type='window')
+
+        self.stores_data.demand = self.stores_data.apply(
+            lambda x: x.demand if (x.s_qty == x.stock) or (x.stock <= 0) else x.s_qty,
+            axis=1
+        )
 
         # 2 - Расчет первого observation
         observation = dict()
