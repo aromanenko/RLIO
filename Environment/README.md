@@ -16,7 +16,7 @@
 
 * __store_processed_data__
 
-Содержит обработанные файлы вида `STORE_N.csv`, где N - id расположения. По сравнению с `MERGE_TABLE_STORE_N.csv`, в этих файлах заполены пропуски, а также добавлена информация о batch_size, lead_time, mply_qty и service_level.
+Содержит обработанные файлы вида `STORE_N.csv`, где N - id расположения. По сравнению с `MERGE_TABLE_STORE_N.csv`, в этих файлах заполены пропуски, а также добавлена информация о batch_size, lead_time, mply_qty, service_level, lambda_promo и lambda_window.
 
 * __experiments__
 
