@@ -74,8 +74,6 @@ def _store_data_preprocessing(input_file, output_file):
         None
     """
 
-    # ------------------- КОД ------------------
-
     print('1 - Загрузка сырых данных')
 
     df = pd.read_csv(input_file, sep=';', decimal='.')
