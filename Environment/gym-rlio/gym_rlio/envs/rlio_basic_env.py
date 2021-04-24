@@ -198,6 +198,26 @@ def _dummy_apply_reward_calculation(row):
     return row.sales - row.stock * ( (1 - row.service_level) / (row.service_level) )
 
 
+def _dummy_apply_reward_calculation_v2(row, r=0.2, k=0.05):
+    """Усложненный вариант расчета reward.
+    К формуле, использованной в статье SMART, добавлены:
+        • - ( r * fact_order ) - штраф за заказ
+        • - ( k * (demand - sales) ) - штраф за неудовлетворенный спрос
+    В данном случае r и k подобраны экспертно и зафиксированы как гиперпараметры
+    Только для применения в apply к pandas.DataFrame
+
+    Args:
+        row:
+            [pandas.Series] Одна строка из pandas.DataFrame
+
+    Returns:
+        reward:
+            [float] Рассчитанное значение reward
+    """
+
+    return row.sales - r * row.order - k * (row.demand - row.sales) - row.stock * ( (1 - row.service_level) / (row.service_level) )
+
+
 def _dummy_apply_reward_calculation_baseline(row):
     """Базовый вариант расчета reward
     Необходима для расчета reward по данным из реальной ритейл сети
@@ -288,6 +308,7 @@ class RlioBasicEnv(gym.Env):
 
         self.stores_data = None
         self.environment_data = None
+        self.reward_apply_function = None
         self.demand_restoration_type = None
 
         self.start_date = None
@@ -295,7 +316,7 @@ class RlioBasicEnv(gym.Env):
         self.current_date = None
 
 
-    def load_data(self, products_dict, demand_restoration_type='window'):
+    def load_data(self, products_dict, demand_restoration_type='window', reward_apply_function=_dummy_apply_reward_calculation_v2):
         """Загрузка данных в среду
 
         Agrs:
@@ -370,6 +391,10 @@ class RlioBasicEnv(gym.Env):
         # 5 - Инициализация дискретного action_space
         self._generate_action_space()
 
+        # 6 - Загрузка выбранной функции восстановления спроса
+
+        self.reward_apply_function = reward_apply_function
+
 
     def _generate_action_space(self):
         """Инициализирует дискретный action_space
@@ -411,10 +436,10 @@ class RlioBasicEnv(gym.Env):
         Делает:
             * Получает уникальные пары shop/sku
             * Расчитывает продажи
-            * Расчитывает reward
-            * Добавляет reward и выбранную агентом policy в лог
             * Исходя из полученной от агента policy рассчитывает recomended_order
             * Исходя из recomended_order рассчитывает order
+            * Расчитывает reward
+            * Добавляет reward и выбранную агентом policy в лог
             * Исходя из expected_lead_time рассчитывает lead_time
             * Перерасчитывает stock
             * Добавляет order в очередь на доставку
@@ -474,15 +499,7 @@ class RlioBasicEnv(gym.Env):
                 self.environment_data[row.store_id][row.product_id]['order_queue'][0]
             )
 
-        # 3 - Расчитать reward
-        df_currentDay['reward'] = df_currentDay.apply(_dummy_apply_reward_calculation, axis=1)
-
-        # 4 - Добавляем reward и policy в лог
-        for index, row in df_currentDay.iterrows():
-            self.environment_data[row.store_id][row.product_id]['reward_log'].append( row.reward )
-            self.environment_data[row.store_id][row.product_id]['policy_log'].append( action[row.store_id][row.product_id] )
-
-        # 5 - Расчитать recomended_order
+        # 3 - Расчитать recomended_order
         for index, row in df_currentDay.iterrows():
             if row.stock <= action[row.store_id][row.product_id][0]:
                 df_currentDay.loc[index, 'recommended_order'] = max(
@@ -492,8 +509,16 @@ class RlioBasicEnv(gym.Env):
             else:
                 df_currentDay.loc[index, 'recommended_order'] = 0
 
-        # 6 - Расчитать order
+        # 4 - Расчитать order
         df_currentDay['order'] = df_currentDay['recommended_order'].apply(_dummy_order_calculation)
+
+        # 5 - Расчитать reward
+        df_currentDay['reward'] = df_currentDay.apply(self.reward_apply_function, axis=1)
+
+        # 6 - Добавляем reward и policy в лог
+        for index, row in df_currentDay.iterrows():
+            self.environment_data[row.store_id][row.product_id]['reward_log'].append( row.reward )
+            self.environment_data[row.store_id][row.product_id]['policy_log'].append( action[row.store_id][row.product_id] )
 
         # 7 - Расчитать lead time
         df_currentDay['fact_lead_time'] = df_currentDay['lead_time'].apply(_dummy_lead_time_calculation)
