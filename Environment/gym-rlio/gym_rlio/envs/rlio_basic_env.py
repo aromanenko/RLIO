@@ -235,6 +235,28 @@ def _dummy_apply_reward_calculation_baseline(row):
     return row.s_qty - row.stock * ( (1 - row.service_level) / (row.service_level) )
 
 
+def _dummy_apply_reward_calculation_baseline_v2(row, r=0.2, k=0.05):
+    """Усложненный вариант расчета reward.
+    К формуле, использованной в статье SMART, добавлены:
+        • - ( r * fact_order ) - штраф за заказ
+        • - ( k * (demand - sales) ) - штраф за неудовлетворенный спрос
+    В данном случае r и k подобраны экспертно и зафиксированы как гиперпараметры
+    Необходима для расчета reward по данным из реальной ритейл сети
+    Только для применения в apply к pandas.DataFrame
+
+    Args:
+        row:
+            [pandas.Series] Одна строка из pandas.DataFrame
+
+    Returns:
+        reward:
+            [float] Рассчитанное значение reward
+    """
+
+    # return row.s_qty - r * row.order - k * (row.demand - row.sales) - row.stock * ( (1 - row.service_level) / (row.service_level) )
+    return row.s_qty - k * (row.demand - row.s_qty) - row.stock * ( (1 - row.service_level) / (row.service_level) )
+
+
 def _dummy_order_calculation(recommended_order):
     """Заглушка для расчета order
     Сюда можно придумать функцию, вносящую хаос в объем заказа
@@ -751,7 +773,7 @@ class RlioBasicEnv(gym.Env):
         """
 
         df_tmp = self.stores_data.copy()
-        df_tmp['reward'] = df_tmp.apply(_dummy_apply_reward_calculation_baseline, axis=1)
+        df_tmp['reward'] = df_tmp.apply(_dummy_apply_reward_calculation_baseline_v2, axis=1)
 
         df_result = df_tmp.groupby(['store_id', 'product_id']).agg(
             {
