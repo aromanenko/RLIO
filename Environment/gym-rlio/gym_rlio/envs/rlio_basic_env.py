@@ -2,6 +2,7 @@
 import os
 import numpy as np
 import pandas as pd
+from math import ceil
 from tqdm import tqdm
 from itertools import product
 ########### DEMAND RESTORATION ##########
@@ -257,20 +258,39 @@ def _dummy_apply_reward_calculation_baseline_v2(row, r=0.2, k=0.05):
     return row.s_qty - k * (row.demand - row.s_qty) - row.stock * ( (1 - row.service_level) / (row.service_level) )
 
 
-def _dummy_order_calculation(recommended_order):
+def _dummy_apply_order_calculation(row):
     """Заглушка для расчета order
     Сюда можно придумать функцию, вносящую хаос в объем заказа
+    Только для применения в apply к pandas.DataFrame
 
     Args:
-        recommended_order:
-            [float] Значение recommended_order, полученное с учетом текущей политики пополнения
+        row:
+            [pandas.Series] Одна строка из pandas.DataFrame
 
     Returns:
         fact_order:
-            [float] Фактическое значение order
+            [int] Фактическое значение order
     """
 
-    return recommended_order
+    return row.recommended_order
+
+
+def _dummy_apply_order_calculation_with_batch_size(row):
+    """Заглушка для расчета order
+    Рассчитывает фактический объем заказа в зависимости от batch_size
+    Сюда можно придумать функцию, вносящую хаос в объем заказа
+    Только для применения в apply к pandas.DataFrame
+
+    Args:
+        row:
+            [pandas.Series] Одна строка из pandas.DataFrame
+
+    Returns:
+        fact_order:
+            [int] Фактическое значение order
+    """
+
+    return row.batch_size * ceil( row.recommended_order / row.batch_size )
 
 
 def _dummy_lead_time_calculation(expected_lead_time):
@@ -285,6 +305,7 @@ def _dummy_lead_time_calculation(expected_lead_time):
         fact_lead_time:
             [float] Фактическое время доставки
     """
+
     return expected_lead_time
 
 
@@ -306,6 +327,8 @@ class RlioBasicEnv(gym.Env):
                     }
                 }
             }
+        * order_apply_function [function] - Функция для рассчета order
+        * reward_apply_function [function] - Функция для рассчета reward
         * demand_restoration_type [string - 'dummy', 'promo' or 'window'] метод восстановления спроса в среде
         * start_date [datetime.date] Дата начала
         * finish_date [datetime.date] Последняя дата
@@ -330,6 +353,7 @@ class RlioBasicEnv(gym.Env):
 
         self.stores_data = None
         self.environment_data = None
+        self.order_apply_function = None
         self.reward_apply_function = None
         self.demand_restoration_type = None
 
@@ -338,7 +362,13 @@ class RlioBasicEnv(gym.Env):
         self.current_date = None
 
 
-    def load_data(self, products_dict, demand_restoration_type='window', reward_apply_function=_dummy_apply_reward_calculation_v2):
+    def load_data(
+        self,
+        products_dict,
+        demand_restoration_type='window',
+        reward_apply_function=_dummy_apply_reward_calculation_v2,
+        order_apply_function=_dummy_apply_order_calculation_with_batch_size
+        ):
         """Загрузка данных в среду
 
         Agrs:
@@ -347,6 +377,10 @@ class RlioBasicEnv(gym.Env):
                     { 'store_id': [product_ids] or 'all' }
             demand_restoration_type:
                 [string - 'dummy', 'promo' or 'window'] метод восстановления спроса в среде
+            reward_apply_function:
+                [function] Функция для рассчета reward
+            order_apply_function:
+                [function] Функция для рассчета order
 
         Returns:
             None
@@ -416,6 +450,10 @@ class RlioBasicEnv(gym.Env):
         # 6 - Загрузка выбранной функции восстановления спроса
 
         self.reward_apply_function = reward_apply_function
+
+        # 7 - Загрузка выбранной функции формирования заказа
+
+        self.order_apply_function = order_apply_function
 
 
     def _generate_action_space(self):
@@ -532,7 +570,7 @@ class RlioBasicEnv(gym.Env):
                 df_currentDay.loc[index, 'recommended_order'] = 0
 
         # 4 - Расчитать order
-        df_currentDay['order'] = df_currentDay['recommended_order'].apply(_dummy_order_calculation)
+        df_currentDay['order'] = df_currentDay.apply(self.order_apply_function, axis=1)
 
         # 5 - Расчитать reward
         df_currentDay['reward'] = df_currentDay.apply(self.reward_apply_function, axis=1)
