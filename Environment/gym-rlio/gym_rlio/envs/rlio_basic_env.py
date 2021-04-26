@@ -600,13 +600,6 @@ class RlioBasicEnv(gym.Env):
         # 10 - Добавить 1 день
         self.current_date += pd.DateOffset(1)
 
-        # while self.current_date not in self.stores_data.curr_date.tolist():
-        #     date_range = pd.date_range(self.start_date, self.finish_date).tolist()
-        #     print(f"{self.current_date.strftime('%d.%m.%Y')} (Day {date_range.index(self.current_date)} of {len(date_range)}) does not exit in store data...")
-        #     print("Skipping that day...")
-        #     print()
-        #     self.current_date += pd.DateOffset(1)
-
         # 11 - Новый observation
         observation = dict()
 
