@@ -79,6 +79,33 @@ print('\n---\n')
 
 # ---
 
+# Init Constant actions
+
+act = []
+
+for i in range(max_actions_space_size):
+    for store in LOAD_ID.keys():
+        for item in LOAD_ID[store]:
+
+            if i < len(actions[store][item]):
+
+                if len(act) <= i:
+                    act.append( dict() )
+
+                if store not in act[i].keys():
+                    act[i][store] = dict()
+
+                act[i][store][item] = actions[store][item][i]
+
+print(act)
+print('\n---\n')
+
+for i in range( len(act) ):
+    print(f'{i+1}\t{len(act[i][4600])}\t{",".join( map(str, act[i][4600].keys()) )}')
+print('\n---\n')
+
+# ---
+
 obs, rev, done, _ = env.reset()
 env.render()
 
