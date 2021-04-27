@@ -28,6 +28,8 @@ LOAD_ID = {
 
 env.load_data( products_dict=LOAD_ID )
 
+# ----------------------------------------------------------------------
+
 print('2 - Генерируем все возможные политики для стратегии Constant Stock Policy (s-1, S)')
 
 policies = []
@@ -37,6 +39,8 @@ for i in range(1, max_sales + 1):
     policies.append( (i-1, i) )
 
 print(f'\tПолучено {len(policies)} возможных политик')
+
+# ----------------------------------------------------------------------
 
 print('3 - Отбираем политики, подходящие нам из условия на mply_qty')
 
@@ -64,6 +68,8 @@ for store in LOAD_ID.keys():
 
 print(f'\tПолучено {max_actions_space_size} возможных политик')
 
+# ----------------------------------------------------------------------
+
 print('4 - Приводим политики в формат action нашей среды')
 
 act = []
@@ -84,6 +90,8 @@ for i in range(max_actions_space_size):
 # for i in range( len(act) ):
 #     print(f'{i+1}\t{len(act[i][4600])}\t{",".join( map(str, act[i][4600].keys()) )}')
 # print('\n--------------\n')
+
+# ----------------------------------------------------------------------
 
 print('5 - Проход всех полученных политик')
 
@@ -116,6 +124,8 @@ for a in tqdm(act):
     for store in local_load.keys():
         for item in local_load[store]:
             reward_log[store][item].append( sum(local_env.environment_data[store][item]['reward_log']) )
+
+# ----------------------------------------------------------------------
 
 print('6 - Результаты:')
 

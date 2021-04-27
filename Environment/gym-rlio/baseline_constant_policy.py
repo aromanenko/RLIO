@@ -1,8 +1,18 @@
+# ----------------------------------------------------------------------
+# ------------------------------- ИМПОРТЫ ------------------------------
+# ----------------------------------------------------------------------
+
 import gym
 import gym_rlio
 import numpy as np
 
 from tqdm import tqdm
+
+# ----------------------------------------------------------------------
+# --------------------------------- КОД --------------------------------
+# ----------------------------------------------------------------------
+
+print('1 - Инициализация среды')
 
 env = gym.make('rlio-v0')
 
@@ -20,26 +30,31 @@ env.load_data(
     products_dict=LOAD_ID
 )
 
-max_sales = int( env.stores_data.demand.max() )
+# ----------------------------------------------------------------------
 
-print('1 - Генерируем все возможные политики')
+print('2 - Генерируем все возможные политики')
 
 policies = []
+max_sales = int( env.stores_data.demand.max() )
+
 for a in env.action_space:
     if a[1] <= 20:
         policies.append(a)
+
 print(f'\tПолучено {len(policies)} возможных политик')
 
-print('2 - Проход всех полученных политик')
+# ----------------------------------------------------------------------
+
+print('3 - Проход всех полученных политик')
 
 reward_log = dict()
+
 for store in LOAD_ID.keys():
     reward_log[store] = dict()
     for item in LOAD_ID[store]:
         reward_log[store][item] = []
 
 for policy in tqdm(policies):
-
     obs, rev, done, _ = env.reset()
 
     pbar = tqdm()
@@ -58,7 +73,9 @@ for policy in tqdm(policies):
         for item in LOAD_ID[store]:
             reward_log[store][item].append( sum(env.environment_data[store][item]['reward_log']) )
 
-print('3 - Результаты:')
+# ----------------------------------------------------------------------
+
+print('4 - Результаты:')
 
 print('\tSTORE\tITEM\tMAX REWARD\tBEST POLICY')
 for store in LOAD_ID.keys():
