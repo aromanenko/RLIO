@@ -275,6 +275,24 @@ def _dummy_apply_order_calculation(row):
     return row.recommended_order
 
 
+def _dummy_apply_order_calculation_v2(row):
+    """Заглушка для расчета order
+    Учитывает projected_stock
+    Сюда можно придумать функцию, вносящую хаос в объем заказа
+    Только для применения в apply к pandas.DataFrame
+
+    Args:
+        row:
+            [pandas.Series] Одна строка из pandas.DataFrame
+
+    Returns:
+        fact_order:
+            [int] Фактическое значение order
+    """
+
+    return max(0, row.recommended_order - row.projected_stock)
+
+
 def _dummy_apply_order_calculation_with_batch_size(row):
     """Заглушка для расчета order
     Рассчитывает фактический объем заказа в зависимости от batch_size
