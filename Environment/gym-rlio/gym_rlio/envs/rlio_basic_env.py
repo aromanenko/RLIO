@@ -580,7 +580,10 @@ class RlioBasicEnv(gym.Env):
 
         # --- Расчитать projected_stock
         for index, row in df_currentDay.iterrows():
-            df_currentDay.loc[index, 'projected_stock'] = sum(self.environment_data[row.store_id][row.product_id]['order_queue'])
+            # 0 - сток, который УЖЕ приехал сегодня
+            # 1 - сток, который приедет завтра
+            # int(row.lead_time) + 1 - сток, который приедет в тот же день, как если мы закажем сегодня
+            df_currentDay.loc[index, 'projected_stock'] = sum(self.environment_data[row.store_id][row.product_id]['order_queue'][1:int(row.lead_time)+1])
 
         # 3 - Расчитать recomended_order
         for index, row in df_currentDay.iterrows():
