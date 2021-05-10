@@ -567,6 +567,7 @@ class RlioBasicEnv(gym.Env):
                                 'mply_qty': [int] Кратность заказа
                                 'lead_time': [int] Ожидаемое время доставки заказа
                                 'batch_size': [int] Количество товара в одной упаковке
+                                'service_level': [float] Значение уровня сервиса
                             }
                         }
                     }
@@ -668,7 +669,8 @@ class RlioBasicEnv(gym.Env):
                 'flag_promo': row.flg_spromo,
                 'mply_qty': row.mply_qty,
                 'lead_time': row.lead_time,
-                'batch_size': row.batch_size
+                'batch_size': row.batch_size,
+                'service_level': row.service_level
             }
 
         # 13 - Словарь наград
@@ -706,6 +708,7 @@ class RlioBasicEnv(gym.Env):
                                 'mply_qty': [int] Кратность заказа
                                 'lead_time': [int] Ожидаемое время доставки заказа
                                 'batch_size': [int] Количество товара в одной упаковке
+                                'service_level': [float] Значение уровня сервиса
                             }
                         }
                     }
@@ -765,7 +768,8 @@ class RlioBasicEnv(gym.Env):
                 'flag_promo': row.flg_spromo,
                 'mply_qty': row.mply_qty,
                 'lead_time': row.lead_time,
-                'batch_size': row.batch_size
+                'batch_size': row.batch_size,
+                'service_level': row.service_level
             }
 
         # 3 - Дефолтный словарь наград
