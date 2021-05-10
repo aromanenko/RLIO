@@ -293,6 +293,25 @@ def _dummy_apply_order_calculation_with_batch_size(row):
     return row.batch_size * ceil( row.recommended_order / row.batch_size )
 
 
+def _dummy_apply_order_calculation_with_batch_size_v2(row):
+    """Заглушка для расчета order
+    Рассчитывает фактический объем заказа в зависимости от batch_size
+    + учитывает projected_stock
+    Сюда можно придумать функцию, вносящую хаос в объем заказа
+    Только для применения в apply к pandas.DataFrame
+
+    Args:
+        row:
+            [pandas.Series] Одна строка из pandas.DataFrame
+
+    Returns:
+        fact_order:
+            [int] Фактическое значение order
+    """
+
+    return row.batch_size * ceil( max(0, row.recommended_order - row.projected_stock) / row.batch_size )
+
+
 def _dummy_lead_time_calculation(expected_lead_time):
     """Заглушка для расчета lead_time
     Сюда можно придумать функцию, вносящую хаос в сроки доставки
@@ -367,7 +386,7 @@ class RlioBasicEnv(gym.Env):
         products_dict,
         demand_restoration_type='window',
         reward_apply_function=_dummy_apply_reward_calculation_v2,
-        order_apply_function=_dummy_apply_order_calculation_with_batch_size
+        order_apply_function=_dummy_apply_order_calculation_with_batch_size_v2
         ):
         """Загрузка данных в среду
 
@@ -558,6 +577,10 @@ class RlioBasicEnv(gym.Env):
                 self.environment_data[row.store_id][row.product_id]['stock'] +\
                 self.environment_data[row.store_id][row.product_id]['order_queue'][0]
             )
+
+        # --- Расчитать projected_stock
+        for index, row in df_currentDay.iterrows():
+            df_currentDay.loc[index, 'projected_stock'] = sum(self.environment_data[row.store_id][row.product_id]['order_queue'])
 
         # 3 - Расчитать recomended_order
         for index, row in df_currentDay.iterrows():
