@@ -515,12 +515,13 @@ class RlioBasicEnv(gym.Env):
         Делает:
             * Получает уникальные пары shop/sku
             * Расчитывает продажи
+            * Пересчитывает stock
+            * Расчитывает projected_stock
             * Исходя из полученной от агента policy рассчитывает recomended_order
             * Исходя из recomended_order рассчитывает order
             * Расчитывает reward
             * Добавляет reward и выбранную агентом policy в лог
             * Исходя из expected_lead_time рассчитывает lead_time
-            * Перерасчитывает stock
             * Добавляет order в очередь на доставку
             * Добаляет 1 день к current_date
             * Расчитывает новый observation и reward
@@ -578,38 +579,7 @@ class RlioBasicEnv(gym.Env):
                 self.environment_data[row.store_id][row.product_id]['order_queue'][0]
             )
 
-        # --- Расчитать projected_stock
-        for index, row in df_currentDay.iterrows():
-            # 0 - сток, который УЖЕ приехал сегодня
-            # 1 - сток, который приедет завтра
-            # int(row.lead_time) + 1 - сток, который приедет в тот же день, как если мы закажем сегодня
-            df_currentDay.loc[index, 'projected_stock'] = sum(self.environment_data[row.store_id][row.product_id]['order_queue'][1:int(row.lead_time)+1])
-
-        # 3 - Расчитать recomended_order
-        for index, row in df_currentDay.iterrows():
-            if row.stock <= action[row.store_id][row.product_id][0]:
-                df_currentDay.loc[index, 'recommended_order'] = max(
-                    action[row.store_id][row.product_id][1] - row.stock - self.environment_data[row.store_id][row.product_id]['order_queue'][0],
-                    0
-                )
-            else:
-                df_currentDay.loc[index, 'recommended_order'] = 0
-
-        # 4 - Расчитать order
-        df_currentDay['order'] = df_currentDay.apply(self.order_apply_function, axis=1)
-
-        # 5 - Расчитать reward
-        df_currentDay['reward'] = df_currentDay.apply(self.reward_apply_function, axis=1)
-
-        # 6 - Добавляем reward и policy в лог
-        for index, row in df_currentDay.iterrows():
-            self.environment_data[row.store_id][row.product_id]['reward_log'].append( row.reward )
-            self.environment_data[row.store_id][row.product_id]['policy_log'].append( action[row.store_id][row.product_id] )
-
-        # 7 - Расчитать lead time
-        df_currentDay['fact_lead_time'] = df_currentDay['lead_time'].apply(_dummy_lead_time_calculation)
-
-        # 8 - Пересчитать stock
+        # 3 - Пересчитать stock
         df_currentDay['stock'] -= df_currentDay['sales']
 
         for index, row in df_currentDay.iterrows():
@@ -619,14 +589,44 @@ class RlioBasicEnv(gym.Env):
         for index, row in df_currentDay.iterrows():
             self.environment_data[row.store_id][row.product_id]['stock'] = row.stock
 
-        # 9 - Добавить order в очередь
+        # 4 - Расчитать projected_stock
+        for index, row in df_currentDay.iterrows():
+            # 0 - сток, который приедет завтра
+            # int(row.lead_time) - сток, который приедет в тот же день, как если мы закажем сегодня
+            df_currentDay.loc[index, 'projected_stock'] = sum(self.environment_data[row.store_id][row.product_id]['order_queue'][:int(row.lead_time)])
+
+        # 5 - Расчитать recomended_order
+        for index, row in df_currentDay.iterrows():
+            if row.stock <= action[row.store_id][row.product_id][0]:
+                df_currentDay.loc[index, 'recommended_order'] = max(
+                    action[row.store_id][row.product_id][1] - row.stock - self.environment_data[row.store_id][row.product_id]['order_queue'][0],
+                    0
+                )
+            else:
+                df_currentDay.loc[index, 'recommended_order'] = 0
+
+        # 6 - Расчитать order
+        df_currentDay['order'] = df_currentDay.apply(self.order_apply_function, axis=1)
+
+        # 7 - Расчитать reward
+        df_currentDay['reward'] = df_currentDay.apply(self.reward_apply_function, axis=1)
+
+        # 8 - Добавляем reward и policy в лог
+        for index, row in df_currentDay.iterrows():
+            self.environment_data[row.store_id][row.product_id]['reward_log'].append( row.reward )
+            self.environment_data[row.store_id][row.product_id]['policy_log'].append( action[row.store_id][row.product_id] )
+
+        # 9 - Расчитать lead time
+        df_currentDay['fact_lead_time'] = df_currentDay['lead_time'].apply(_dummy_lead_time_calculation)
+
+        # 10 - Добавить order в очередь
         for index, row in df_currentDay.iterrows():
             self.environment_data[row.store_id][row.product_id]['order_queue'][int(row.fact_lead_time) - 1] = row.order
 
-        # 10 - Добавить 1 день
+        # 11 - Добавить 1 день
         self.current_date += pd.DateOffset(1)
 
-        # 11 - Новый observation
+        # 12 - Новый observation
         observation = dict()
 
         df_obs = self.stores_data[self.stores_data.curr_date == self.current_date]
@@ -653,7 +653,7 @@ class RlioBasicEnv(gym.Env):
                 'batch_size': row.batch_size
             }
 
-        # 12 - Словарь наград
+        # 13 - Словарь наград
         rewards = dict()
 
         for index, row in df_currentDay.iterrows():
