@@ -618,6 +618,8 @@ class RlioBasicEnv(gym.Env):
         for index, row in df_currentDay.iterrows():
             if row.stock <= action[row.store_id][row.product_id][0]:
                 df_currentDay.loc[index, 'recommended_order'] = max(
+                    # ИСПРАВИТЬ
+                    # action[row.store_id][row.product_id][1] - row.stock
                     action[row.store_id][row.product_id][1] - row.stock - self.environment_data[row.store_id][row.product_id]['order_queue'][0],
                     0
                 )
