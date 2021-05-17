@@ -5,6 +5,7 @@
 import gym
 import gym_rlio
 
+import json
 import numpy as np
 import pandas as pd
 
@@ -229,5 +230,15 @@ while current_epoch < MAX_EPOCHS:
         for item in LOAD_ID[store]:
             _bestActionId = df_actions[(df_actions.store_id == store) & (df_actions.product_id == item)].R.idxmax()
             print(f'\tStore: {store}\tItem: {item}\tCumulative Reward: {cumulative_reward[store][item]}\tSteps with maximization_step: {maximization_step[store][item]}\tBest action: {df_actions.loc[_bestActionId, "action"]}')
+
+    reward_log = dict()
+
+    for store in LOAD_ID.keys():
+        reward_log[store] = dict()
+        for item in LOAD_ID[store]:
+            reward_log[store][item] = env.environment_data[store][item]['reward_log']
+
+    with open(f'epoch_{current_epoch}_lod.json', 'w') as fp:
+        json.dump(reward_log, fp)
 
     df_actions.to_excel(f'experiment_{current_epoch}epochs_{current_step}steps.xlsx', index=False)
